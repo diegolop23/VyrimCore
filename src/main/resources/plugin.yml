@@ -1,0 +1,14 @@
+name: VyrimCore
+version: '${version}'
+
+main: net.vyrim.core.VyrimCore
+api-version: '1.21.11'
+load: POSTWORLD
+
+softdepend: [LuckPerms, PlaceholderAPI]
+
+commands:
+  prefix:
+    description: Player-facing prefix builder controls
+  prefixadmin:
+    description: Staff command to set another player's prefix pieces
