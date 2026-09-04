@@ -21,4 +21,19 @@ public interface Module {
     default boolean isEnabled() {
         return false;
     }
+
+    /**
+     * Reloads the module. Disables the module if currently enabled,
+     * checks availability against updated configuration, and re-enables if eligible.
+     *
+     * @param core the plugin instance
+     */
+    default void reload(VyrimCore core) {
+        if (isEnabled()) {
+            onDisable();
+        }
+        if (isAvailable(core)) {
+            onEnable(core);
+        }
+    }
 }

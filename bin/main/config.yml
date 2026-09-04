@@ -10,3 +10,8 @@ modules:
     search_radius: 6400
     # Whether audio cues are played during calibration, success, and errors
     play_sounds: true
+    # Cooldown duration in seconds between compass search activations (0 to disable)
+    cooldown: 30
+    # Module messages (supports color formatting and %time% or %seconds% placeholder)
+    messages:
+      cooldown: "&cYou must wait &e%time%s &cbefore searching for another biome!"

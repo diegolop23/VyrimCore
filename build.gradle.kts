@@ -13,12 +13,15 @@ dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT")
     compileOnly("io.lumine:MythicLib-dist:1.7.1-SNAPSHOT")
     compileOnly("net.Indyuce:MMOItems-API:6.10.1-SNAPSHOT")
+    compileOnly("net.luckperms:api:5.4")
 
     testImplementation("io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT")
     testImplementation("io.lumine:MythicLib-dist:1.7.1-SNAPSHOT")
     testImplementation("net.Indyuce:MMOItems-API:6.10.1-SNAPSHOT")
+    testImplementation("net.luckperms:api:5.4")
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
+    testImplementation("org.mockito:mockito-core:5.11.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

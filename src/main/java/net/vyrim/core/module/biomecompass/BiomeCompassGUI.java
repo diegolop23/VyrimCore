@@ -56,12 +56,18 @@ public class BiomeCompassGUI implements Listener {
 
     private final VyrimCore core;
     private final BiomeLocatorService locatorService;
+    private final BiomeCompassModule module;
     private final NamespacedKey pdcBiomeKey;
     private final NamespacedKey pdcActionKey;
 
     public BiomeCompassGUI(VyrimCore core, BiomeLocatorService locatorService) {
+        this(core, locatorService, null);
+    }
+
+    public BiomeCompassGUI(VyrimCore core, BiomeLocatorService locatorService, BiomeCompassModule module) {
         this.core = core;
         this.locatorService = locatorService;
+        this.module = module;
         this.pdcBiomeKey = new NamespacedKey(core, "gui_biome_key");
         this.pdcActionKey = new NamespacedKey(core, "gui_action_key");
     }
@@ -379,7 +385,27 @@ public class BiomeCompassGUI implements Listener {
                 return;
             }
 
+            // Cooldown & Permission Bypass Check
+            boolean bypass = core != null && core.getLuckPermsHook() != null
+                    ? core.getLuckPermsHook().hasPermission(player, BiomeCompassModule.PERMISSION_BYPASS)
+                    : player.hasPermission(BiomeCompassModule.PERMISSION_BYPASS);
+
+            if (!bypass && module != null && module.isOnCooldown(player.getUniqueId())) {
+                long remaining = module.getRemainingCooldownSeconds(player.getUniqueId());
+                player.sendMessage(module.formatCooldownMessage(remaining));
+                if (locatorService != null && locatorService.isPlaySounds()) {
+                    player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1.0f, 0.5f);
+                }
+                player.closeInventory();
+                return;
+            }
+
             player.closeInventory();
+
+            if (!bypass && module != null) {
+                module.setCooldown(player.getUniqueId());
+            }
+
             locatorService.locateBiome(player, biome, biomeKey, holder.getHand(), holder.getInventorySlot());
         }
     }

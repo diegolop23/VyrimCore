@@ -11,3 +11,7 @@ commands:
     description: Player-facing prefix builder controls
   prefixadmin:
     description: Staff command to set another player's prefix pieces
+  vyrimcore:
+    description: Core administrative management command
+    permission: vyrimcore.command.reload
+    usage: /<command> reload [module]
