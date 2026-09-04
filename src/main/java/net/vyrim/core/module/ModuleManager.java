@@ -49,15 +49,18 @@ public final class ModuleManager {
 
     public void enableAll() {
         for (Module module : registered) {
-            if (enabled.contains(module)) {
+            if (module.isEnabled()) {
+                if (!enabled.contains(module)) {
+                    enabled.add(module);
+                }
                 continue;
             }
-            if (!module.isAvailable(core)) {
-                core.getLogger().warning("[Modules] Skipping '" + module.name() + "': missing dependency or disabled.");
+            if (!module.isConfigEnabled(core) || !module.isAvailable(core)) {
+                core.getLogger().warning("[Modules] Skipping '" + module.name() + "': disabled in config or missing dependency.");
                 continue;
             }
             try {
-                module.onEnable(core);
+                module.enable(core);
                 enabled.add(module);
                 core.getLogger().info("[Modules] Enabled '" + module.name() + "'.");
             } catch (Exception ex) {
@@ -69,7 +72,7 @@ public final class ModuleManager {
     public void disableAll() {
         for (Module module : new ArrayList<>(enabled)) {
             try {
-                module.onDisable();
+                module.disable();
             } catch (Exception ex) {
                 core.getLogger().severe("[Modules] Failed to disable '" + module.name() + "': " + ex.getMessage());
             }
@@ -81,16 +84,37 @@ public final class ModuleManager {
         if (module == null) {
             return;
         }
+        boolean configEnabled = module.isConfigEnabled(core);
+        boolean currentlyEnabled = module.isEnabled();
+
         try {
-            module.reload(core);
-            if (module.isEnabled()) {
+            if (configEnabled && !currentlyEnabled) {
+                if (!module.isAvailable(core)) {
+                    core.getLogger().warning("[Modules] Cannot enable '" + module.name() + "': missing dependency or unavailable.");
+                    return;
+                }
+                module.enable(core);
                 if (!enabled.contains(module)) {
                     enabled.add(module);
                 }
-                core.getLogger().info("[Modules] Reloaded and enabled '" + module.name() + "'.");
-            } else {
+                core.getLogger().info("[Modules] Enabled '" + module.name() + "' on reload.");
+            } else if (!configEnabled && currentlyEnabled) {
+                module.disable();
                 enabled.remove(module);
-                core.getLogger().info("[Modules] Reloaded and disabled '" + module.name() + "'.");
+                core.getLogger().info("[Modules] Disabled '" + module.name() + "' on reload (disabled in config).");
+            } else if (configEnabled && currentlyEnabled) {
+                module.reload(core);
+                if (module.isEnabled()) {
+                    if (!enabled.contains(module)) {
+                        enabled.add(module);
+                    }
+                    core.getLogger().info("[Modules] Reloaded active configuration for '" + module.name() + "'.");
+                } else {
+                    enabled.remove(module);
+                    core.getLogger().info("[Modules] Reloaded and disabled '" + module.name() + "'.");
+                }
+            } else {
+                core.getLogger().info("[Modules] Module '" + module.name() + "' remains disabled.");
             }
         } catch (Exception ex) {
             core.getLogger().severe("[Modules] Failed to reload '" + module.name() + "': " + ex.getMessage());
@@ -110,6 +134,6 @@ public final class ModuleManager {
         for (Module module : registered) {
             reload(module);
         }
-        core.getLogger().info("[Modules] All registered modules reloaded.");
+        core.getLogger().info("[Modules] All registered modules synchronized and reloaded.");
     }
 }

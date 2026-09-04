@@ -7,11 +7,14 @@ modules:
     # Controls whether the Biome Compass module is enabled
     enabled: true
     # Maximum block radius to scan when locating the nearest biome
-    search_radius: 6400
-    # Whether audio cues are played during calibration, success, and errors
-    play_sounds: true
+    radius: 6400
     # Cooldown duration in seconds between compass search activations (0 to disable)
     cooldown: 30
-    # Module messages (supports color formatting and %time% or %seconds% placeholder)
+    # Whether audio cues are played during calibration, success, and errors
+    play_sounds: true
+    # Configurable module messages (supports MiniMessage and legacy color codes)
     messages:
-      cooldown: "&cYou must wait &e%time%s &cbefore searching for another biome!"
+      cooldown: "<red>You must wait <yellow>%seconds%s</yellow> before scanning again!</red>"
+      scanning: "<gray>Locating closest <aqua>%biome%</aqua>...</gray>"
+      found: "<green>Compass tuned to <aqua>%biome%</aqua> (~%distance%m away)!</green>"
+      not_found: "<red>No %biome% found within range.</red>"

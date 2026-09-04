@@ -54,8 +54,9 @@ class BiomeCompassCooldownTest {
         module.setCooldown(uuid1);
         assertFalse(module.isOnCooldown(uuid1));
 
-        // When cooldown is positive
+        // When cooldown is positive, reload configuration
         when(mockConfig.getInt("modules.biome_compass.cooldown", 30)).thenReturn(5);
+        module.reload(mockCore);
         module.setCooldown(uuid2);
         assertTrue(module.isOnCooldown(uuid2));
 
@@ -65,18 +66,40 @@ class BiomeCompassCooldownTest {
     }
 
     @Test
-    @DisplayName("Cooldown message formatting replaces %time% and %seconds%")
+    @DisplayName("Cooldown message formatting replaces %time% and %seconds% with MiniMessage support")
     void testMessageFormatting() {
         VyrimCore mockCore = mock(VyrimCore.class);
         FileConfiguration mockConfig = mock(FileConfiguration.class);
         when(mockCore.getConfig()).thenReturn(mockConfig);
         when(mockConfig.getString(eq("modules.biome_compass.messages.cooldown"), anyString()))
-                .thenReturn("&cWait %time%s (or %seconds% seconds)!");
+                .thenReturn("<red>You must wait <yellow>%seconds%s</yellow> before scanning again!</red>");
 
         BiomeCompassModule module = new BiomeCompassModule(mockCore, null);
         Component component = module.formatCooldownMessage(15);
 
         String plain = PlainTextComponentSerializer.plainText().serialize(component);
-        assertEquals("Wait 15s (or 15 seconds)!", plain);
+        assertEquals("You must wait 15s before scanning again!", plain);
+    }
+
+    @Test
+    @DisplayName("Module reload updates cooldown duration, radius, and message templates")
+    void testModuleReload() {
+        VyrimCore mockCore = mock(VyrimCore.class);
+        FileConfiguration mockConfig = mock(FileConfiguration.class);
+        when(mockCore.getConfig()).thenReturn(mockConfig);
+        when(mockConfig.getInt("modules.biome_compass.cooldown", 30)).thenReturn(30);
+        when(mockConfig.getInt("modules.biome_compass.search_radius", 6400)).thenReturn(6400);
+
+        BiomeCompassModule module = new BiomeCompassModule(mockCore, null);
+        assertEquals(30, module.getCooldownSeconds());
+        assertEquals(6400, module.getSearchRadius());
+
+        // Update config values on disk
+        when(mockConfig.getInt("modules.biome_compass.cooldown", 30)).thenReturn(60);
+        when(mockConfig.getInt("modules.biome_compass.search_radius", 6400)).thenReturn(3200);
+
+        module.reload(mockCore);
+        assertEquals(60, module.getCooldownSeconds());
+        assertEquals(3200, module.getSearchRadius());
     }
 }

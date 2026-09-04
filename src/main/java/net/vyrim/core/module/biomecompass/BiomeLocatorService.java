@@ -63,11 +63,35 @@ public class BiomeLocatorService {
     }
 
     public int getSearchRadius() {
-        return core.getConfig().getInt("modules.biome_compass.search_radius", 6400);
+        if (core == null || core.getConfig() == null) {
+            return 6400;
+        }
+        return core.getConfig().getInt("modules.biome_compass.radius",
+                core.getConfig().getInt("modules.biome_compass.search_radius", 6400));
     }
 
     public boolean isPlaySounds() {
+        if (core == null || core.getConfig() == null) {
+            return true;
+        }
         return core.getConfig().getBoolean("modules.biome_compass.play_sounds", true);
+    }
+
+    /**
+     * Parses formatted component supporting both MiniMessage tags (<color>) and legacy codes (&c).
+     */
+    public static Component parseMessage(String input) {
+        if (input == null || input.isEmpty()) {
+            return Component.empty();
+        }
+        if (input.contains("&")) {
+            return net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacyAmpersand().deserialize(input);
+        }
+        try {
+            return net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().deserialize(input);
+        } catch (Throwable ignored) {
+            return net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacyAmpersand().deserialize(input);
+        }
     }
 
     /**
@@ -87,12 +111,10 @@ public class BiomeLocatorService {
         int searchRadius = getSearchRadius();
         String friendlyName = formatBiomeName(biomeKey);
 
-        player.sendMessage(Component.text()
-                .append(Component.text("🧭 ", NamedTextColor.GOLD))
-                .append(Component.text("Locating nearest ", NamedTextColor.GRAY))
-                .append(Component.text(friendlyName, NamedTextColor.AQUA, TextDecoration.BOLD))
-                .append(Component.text(" (within " + searchRadius + " blocks)...", NamedTextColor.GRAY))
-                .build());
+        String scanningTemplate = core != null && core.getConfig() != null
+                ? core.getConfig().getString("modules.biome_compass.messages.scanning", "<gray>Locating closest <aqua>%biome%</aqua>...</gray>")
+                : "<gray>Locating closest <aqua>%biome%</aqua>...</gray>";
+        player.sendMessage(parseMessage(scanningTemplate.replace("%biome%", friendlyName)));
 
         if (isPlaySounds()) {
             player.playSound(playerLoc, Sound.UI_BUTTON_CLICK, 0.7f, 1.2f);
@@ -131,12 +153,10 @@ public class BiomeLocatorService {
         }
 
         if (searchResult == null || searchResult.getLocation() == null) {
-            player.sendMessage(Component.text()
-                    .append(Component.text("❌ ", NamedTextColor.RED))
-                    .append(Component.text("No ", NamedTextColor.GRAY))
-                    .append(Component.text(friendlyName, NamedTextColor.GOLD))
-                    .append(Component.text(" was found within " + searchRadius + " blocks.", NamedTextColor.GRAY))
-                    .build());
+            String notFoundTemplate = core != null && core.getConfig() != null
+                    ? core.getConfig().getString("modules.biome_compass.messages.not_found", "<red>No %biome% found within range.</red>")
+                    : "<red>No %biome% found within range.</red>";
+            player.sendMessage(parseMessage(notFoundTemplate.replace("%biome%", friendlyName)));
 
             if (isPlaySounds()) {
                 player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1.0f, 0.5f);
@@ -193,12 +213,15 @@ public class BiomeLocatorService {
             player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.7f, 1.4f);
         }
 
-        player.sendMessage(Component.text()
-                .append(Component.text("✔ Compass calibrated to ", NamedTextColor.GREEN))
-                .append(Component.text(friendlyName, NamedTextColor.GOLD, TextDecoration.BOLD))
-                .append(Component.text("! (~" + String.format("%,d", blockDist) + " blocks away at X: "
-                        + target.getBlockX() + ", Z: " + target.getBlockZ() + ")", NamedTextColor.GRAY))
-                .build());
+        String foundTemplate = core != null && core.getConfig() != null
+                ? core.getConfig().getString("modules.biome_compass.messages.found", "<green>Compass tuned to <aqua>%biome%</aqua> (~%distance%m away)!</green>")
+                : "<green>Compass tuned to <aqua>%biome%</aqua> (~%distance%m away)!</green>";
+        String formattedFound = foundTemplate
+                .replace("%biome%", friendlyName)
+                .replace("%distance%", String.format("%,d", blockDist))
+                .replace("%x%", String.valueOf(target.getBlockX()))
+                .replace("%z%", String.valueOf(target.getBlockZ()));
+        player.sendMessage(parseMessage(formattedFound));
     }
 
     public static void updateCompassLore(CompassMeta meta, String friendlyName, Location target, long distance) {

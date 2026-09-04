@@ -18,7 +18,7 @@ public class BiomeCompassModule implements Module {
 
     private final VyrimCore core;
     private final MMOItemsHook mmoItemsHook;
-    private final java.util.Map<java.util.UUID, Long> cooldowns = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<java.util.UUID, Long> lastSearchTimes = new java.util.concurrent.ConcurrentHashMap<>();
 
     private boolean enabled;
     private BiomeLocatorService locatorService;
@@ -27,9 +27,18 @@ public class BiomeCompassModule implements Module {
     private org.bukkit.event.Listener quitListener;
     private org.bukkit.scheduler.BukkitTask cleanupTask;
 
+    private int cooldownSeconds = 30;
+    private int searchRadius = 6400;
+    private boolean playSounds = true;
+    private String messageCooldown = "<red>You must wait <yellow>%seconds%s</yellow> before scanning again!</red>";
+    private String messageScanning = "<gray>Locating closest <aqua>%biome%</aqua>...</gray>";
+    private String messageFound = "<green>Compass tuned to <aqua>%biome%</aqua> (~%distance%m away)!</green>";
+    private String messageNotFound = "<red>No %biome% found within range.</red>";
+
     public BiomeCompassModule(VyrimCore core, MMOItemsHook mmoItemsHook) {
         this.core = core;
         this.mmoItemsHook = mmoItemsHook;
+        loadConfiguration();
     }
 
     @Override
@@ -38,11 +47,16 @@ public class BiomeCompassModule implements Module {
     }
 
     @Override
+    public String configKey() {
+        return "biome_compass";
+    }
+
+    @Override
     public boolean isAvailable(VyrimCore core) {
         if (core == null || core.getConfig() == null) {
             return false;
         }
-        boolean configEnabled = core.getConfig().getBoolean("modules.biome_compass.enabled", true);
+        boolean configEnabled = isConfigEnabled(core);
         if (!configEnabled) {
             core.getLogger().info("[BiomeCompass] Module is disabled in config.yml.");
             return false;
@@ -74,6 +88,8 @@ public class BiomeCompassModule implements Module {
             return;
         }
 
+        loadConfiguration();
+
         this.locatorService = new BiomeLocatorService(core);
         this.gui = new BiomeCompassGUI(core, locatorService, this);
         this.ability = new BiomeCompassAbility(this, gui);
@@ -85,7 +101,7 @@ public class BiomeCompassModule implements Module {
         this.quitListener = new org.bukkit.event.Listener() {
             @org.bukkit.event.EventHandler
             public void onPlayerQuit(org.bukkit.event.player.PlayerQuitEvent event) {
-                cooldowns.remove(event.getPlayer().getUniqueId());
+                lastSearchTimes.remove(event.getPlayer().getUniqueId());
             }
         };
         Bukkit.getPluginManager().registerEvents(quitListener, core);
@@ -110,6 +126,9 @@ public class BiomeCompassModule implements Module {
             return;
         }
         this.enabled = false;
+
+        // Clear cooldown cache on disable
+        lastSearchTimes.clear();
 
         // Unregister GUI event listeners
         if (gui != null) {
@@ -152,6 +171,46 @@ public class BiomeCompassModule implements Module {
         core.getLogger().info("[BiomeCompass] Biome Compass module disabled and cleaned up.");
     }
 
+    @Override
+    public void reload(VyrimCore core) {
+        loadConfiguration();
+        if (core != null && core.getLogger() != null) {
+            core.getLogger().info("[BiomeCompass] Reloaded configuration (radius: "
+                    + searchRadius + ", cooldown: " + cooldownSeconds + "s).");
+        }
+    }
+
+    public void loadConfiguration() {
+        if (core == null || core.getConfig() == null) {
+            this.cooldownSeconds = 30;
+            this.searchRadius = 6400;
+            this.playSounds = true;
+            this.messageCooldown = "<red>You must wait <yellow>%seconds%s</yellow> before scanning again!</red>";
+            this.messageScanning = "<gray>Locating closest <aqua>%biome%</aqua>...</gray>";
+            this.messageFound = "<green>Compass tuned to <aqua>%biome%</aqua> (~%distance%m away)!</green>";
+            this.messageNotFound = "<red>No %biome% found within range.</red>";
+            return;
+        }
+
+        var config = core.getConfig();
+        this.cooldownSeconds = config.getInt("modules.biome_compass.cooldown", 30);
+        if (config.contains("modules.biome_compass.radius")) {
+            this.searchRadius = config.getInt("modules.biome_compass.radius", 6400);
+        } else {
+            this.searchRadius = config.getInt("modules.biome_compass.search_radius", 6400);
+        }
+        this.playSounds = config.getBoolean("modules.biome_compass.play_sounds", true);
+
+        this.messageCooldown = config.getString("modules.biome_compass.messages.cooldown",
+                "<red>You must wait <yellow>%seconds%s</yellow> before scanning again!</red>");
+        this.messageScanning = config.getString("modules.biome_compass.messages.scanning",
+                "<gray>Locating closest <aqua>%biome%</aqua>...</gray>");
+        this.messageFound = config.getString("modules.biome_compass.messages.found",
+                "<green>Compass tuned to <aqua>%biome%</aqua> (~%distance%m away)!</green>");
+        this.messageNotFound = config.getString("modules.biome_compass.messages.not_found",
+                "<red>No %biome% found within range.</red>");
+    }
+
     /**
      * Returns whether this module is currently active.
      */
@@ -171,25 +230,57 @@ public class BiomeCompassModule implements Module {
         return ability;
     }
 
-    /**
-     * Cooldown duration in seconds configured in config.yml.
-     */
     public int getCooldownSeconds() {
-        if (core == null || core.getConfig() == null) {
-            return 30;
-        }
-        return core.getConfig().getInt("modules.biome_compass.cooldown", 30);
+        return cooldownSeconds;
+    }
+
+    public int getSearchRadius() {
+        return searchRadius;
+    }
+
+    public boolean isPlaySounds() {
+        return playSounds;
+    }
+
+    public String getCooldownMessageTemplate() {
+        return messageCooldown;
+    }
+
+    public String getScanningMessageTemplate() {
+        return messageScanning;
+    }
+
+    public String getFoundMessageTemplate() {
+        return messageFound;
+    }
+
+    public String getNotFoundMessageTemplate() {
+        return messageNotFound;
     }
 
     /**
-     * Raw message template configured for cooldown feedback.
+     * Calculates remaining cooldown time in ceiling seconds.
+     * Formula: (lastTime + cooldownMillis - now) / 1000
+     *
+     * @param uuid the player's unique identifier
+     * @return remaining seconds, or 0 if expired/not on cooldown
      */
-    public String getCooldownMessageTemplate() {
-        if (core == null || core.getConfig() == null) {
-            return "&cYou must wait &e%time%s &cbefore searching for another biome!";
+    public long getRemainingCooldownSeconds(java.util.UUID uuid) {
+        if (uuid == null) {
+            return 0;
         }
-        return core.getConfig().getString("modules.biome_compass.messages.cooldown",
-                "&cYou must wait &e%time%s &cbefore searching for another biome!");
+        Long lastTime = lastSearchTimes.get(uuid);
+        if (lastTime == null) {
+            return 0;
+        }
+        long cooldownMillis = getCooldownSeconds() * 1000L;
+        long now = System.currentTimeMillis();
+        long remainingMillis = (lastTime + cooldownMillis) - now;
+        if (remainingMillis <= 0) {
+            lastSearchTimes.remove(uuid);
+            return 0;
+        }
+        return (long) Math.ceil(remainingMillis / 1000.0);
     }
 
     /**
@@ -199,55 +290,28 @@ public class BiomeCompassModule implements Module {
      * @return true if currently on cooldown
      */
     public boolean isOnCooldown(java.util.UUID uuid) {
-        if (uuid == null) {
-            return false;
-        }
-        Long expireTime = cooldowns.get(uuid);
-        if (expireTime == null) {
-            return false;
-        }
-        if (System.currentTimeMillis() >= expireTime) {
-            cooldowns.remove(uuid);
-            return false;
-        }
-        return true;
+        return getRemainingCooldownSeconds(uuid) > 0;
     }
 
     /**
-     * Calculates remaining cooldown time in ceiling seconds.
-     *
-     * @param uuid the player's unique identifier
-     * @return remaining seconds, or 0 if expired/not on cooldown
-     */
-    public long getRemainingCooldownSeconds(java.util.UUID uuid) {
-        if (uuid == null) {
-            return 0;
-        }
-        Long expireTime = cooldowns.get(uuid);
-        if (expireTime == null) {
-            return 0;
-        }
-        long remainingMillis = expireTime - System.currentTimeMillis();
-        if (remainingMillis <= 0) {
-            cooldowns.remove(uuid);
-            return 0;
-        }
-        return (remainingMillis + 999) / 1000;
-    }
-
-    /**
-     * Sets the player's cooldown timestamp according to the configured duration.
+     * Updates the player's cooldown timestamp to the current epoch millis.
      *
      * @param uuid the player's unique identifier
      */
-    public void setCooldown(java.util.UUID uuid) {
+    public void updateSearchTimestamp(java.util.UUID uuid) {
         if (uuid == null) {
             return;
         }
-        int seconds = getCooldownSeconds();
-        if (seconds > 0) {
-            cooldowns.put(uuid, System.currentTimeMillis() + (seconds * 1000L));
+        if (getCooldownSeconds() > 0) {
+            lastSearchTimes.put(uuid, System.currentTimeMillis());
         }
+    }
+
+    /**
+     * Sets the player's cooldown timestamp to now (for backwards compatibility).
+     */
+    public void setCooldown(java.util.UUID uuid) {
+        updateSearchTimestamp(uuid);
     }
 
     /**
@@ -255,8 +319,15 @@ public class BiomeCompassModule implements Module {
      */
     public void clearCooldown(java.util.UUID uuid) {
         if (uuid != null) {
-            cooldowns.remove(uuid);
+            lastSearchTimes.remove(uuid);
         }
+    }
+
+    /**
+     * Clears all cooldowns in memory.
+     */
+    public void clearCooldowns() {
+        lastSearchTimes.clear();
     }
 
     /**
@@ -264,12 +335,13 @@ public class BiomeCompassModule implements Module {
      */
     public void cleanupExpiredCooldowns() {
         long now = System.currentTimeMillis();
-        cooldowns.entrySet().removeIf(entry -> entry.getValue() <= now);
+        long cooldownMillis = getCooldownSeconds() * 1000L;
+        lastSearchTimes.entrySet().removeIf(entry -> (now - entry.getValue()) >= cooldownMillis);
     }
 
     /**
-     * Formats the configured cooldown message, replacing %time% and %seconds% placeholders
-     * with the remaining seconds, deserialized with color code support.
+     * Formats the configured cooldown message, replacing %seconds% and %time% placeholders
+     * with the remaining seconds.
      *
      * @param remainingSeconds remaining cooldown time
      * @return formatted adventure Component
@@ -277,8 +349,8 @@ public class BiomeCompassModule implements Module {
     public net.kyori.adventure.text.Component formatCooldownMessage(long remainingSeconds) {
         String template = getCooldownMessageTemplate();
         String formatted = template
-                .replace("%time%", String.valueOf(remainingSeconds))
-                .replace("%seconds%", String.valueOf(remainingSeconds));
-        return net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacyAmpersand().deserialize(formatted);
+                .replace("%seconds%", String.valueOf(remainingSeconds))
+                .replace("%time%", String.valueOf(remainingSeconds));
+        return BiomeLocatorService.parseMessage(formatted);
     }
 }

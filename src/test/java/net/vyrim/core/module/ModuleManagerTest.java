@@ -16,6 +16,7 @@ class ModuleManagerTest {
     private static class TestModule implements Module {
         private final String name;
         private boolean available;
+        private boolean configEnabled = true;
         private boolean enabled = false;
         private int reloadCount = 0;
 
@@ -32,6 +33,11 @@ class ModuleManagerTest {
         @Override
         public boolean isAvailable(VyrimCore core) {
             return available;
+        }
+
+        @Override
+        public boolean isConfigEnabled(VyrimCore core) {
+            return configEnabled;
         }
 
         @Override
@@ -109,7 +115,7 @@ class ModuleManagerTest {
     }
 
     @Test
-    @DisplayName("ModuleManager reloads individual modules and updates enabled status")
+    @DisplayName("ModuleManager dynamically enables, disables, and reloads modules based on config")
     void testReloadModule() {
         VyrimCore mockCore = mock(VyrimCore.class);
         when(mockCore.getLogger()).thenReturn(Logger.getAnonymousLogger());
@@ -120,19 +126,24 @@ class ModuleManagerTest {
         manager.enableAll();
         assertTrue(modA.isEnabled());
 
-        // Reload by name
+        // 1. Config enabled = true, module enabled = true -> calls module.reload()
         boolean reloaded = manager.reload("alpha");
         assertTrue(reloaded);
         assertEquals(1, modA.reloadCount);
         assertTrue(modA.isEnabled());
         assertTrue(manager.getEnabledModules().contains(modA));
 
-        // Disable availability, reload should disable module
-        modA.available = false;
+        // 2. Config enabled = false, module enabled = true -> calls module.disable()
+        modA.configEnabled = false;
         manager.reload(modA);
-        assertEquals(2, modA.reloadCount);
         assertFalse(modA.isEnabled());
         assertFalse(manager.getEnabledModules().contains(modA));
+
+        // 3. Config enabled = true, module enabled = false -> calls module.enable()
+        modA.configEnabled = true;
+        manager.reload(modA);
+        assertTrue(modA.isEnabled());
+        assertTrue(manager.getEnabledModules().contains(modA));
 
         // Reload nonexistent
         assertFalse(manager.reload("NonExistent"));

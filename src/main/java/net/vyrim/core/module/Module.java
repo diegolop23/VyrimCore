@@ -23,6 +23,32 @@ public interface Module {
     }
 
     /**
+     * The configuration path key for this module, e.g. "biome_compass".
+     * Defaults to the snake_case representation of name().
+     */
+    default String configKey() {
+        return name().replaceAll("([a-z])([A-Z]+)", "$1_$2").toLowerCase();
+    }
+
+    /**
+     * Checks whether the module is enabled in config.yml under modules.<configKey>.enabled.
+     */
+    default boolean isConfigEnabled(VyrimCore core) {
+        if (core == null || core.getConfig() == null) {
+            return true;
+        }
+        return core.getConfig().getBoolean("modules." + configKey() + ".enabled", true);
+    }
+
+    default void enable(VyrimCore core) {
+        onEnable(core);
+    }
+
+    default void disable() {
+        onDisable();
+    }
+
+    /**
      * Reloads the module. Disables the module if currently enabled,
      * checks availability against updated configuration, and re-enables if eligible.
      *

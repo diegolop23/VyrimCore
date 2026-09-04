@@ -131,10 +131,28 @@ public class LuckPermsHook {
         }
 
         public boolean hasPermission(Player player, String permission) {
-            net.luckperms.api.model.user.User user = luckPerms.getUserManager().getUser(player.getUniqueId());
-            if (user != null) {
-                return user.getCachedData().getPermissionData().checkPermission(permission).asBoolean();
+            try {
+                net.luckperms.api.platform.PlayerAdapter<Player> adapter = luckPerms.getPlayerAdapter(Player.class);
+                net.luckperms.api.cacheddata.CachedPermissionData permissionData = adapter.getPermissionData(player);
+                net.luckperms.api.util.Tristate tristate = permissionData.checkPermission(permission);
+                if (tristate != net.luckperms.api.util.Tristate.UNDEFINED) {
+                    return tristate.asBoolean();
+                }
+            } catch (Throwable ignored) {
             }
+
+            try {
+                net.luckperms.api.model.user.User user = luckPerms.getUserManager().getUser(player.getUniqueId());
+                if (user != null) {
+                    net.luckperms.api.query.QueryOptions queryOptions = luckPerms.getContextManager().getQueryOptions(player);
+                    net.luckperms.api.util.Tristate tristate = user.getCachedData().getPermissionData(queryOptions).checkPermission(permission);
+                    if (tristate != net.luckperms.api.util.Tristate.UNDEFINED) {
+                        return tristate.asBoolean();
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+
             return player.hasPermission(permission);
         }
     }

@@ -22,7 +22,8 @@ import java.util.Optional;
  */
 public class VyrimCoreCommand implements CommandExecutor, TabCompleter {
 
-    public static final String PERMISSION_RELOAD = "vyrimcore.command.reload";
+    public static final String PERMISSION_ADMIN_RELOAD = "vyrimcore.admin.reload";
+    public static final String PERMISSION_COMMAND_RELOAD = "vyrimcore.command.reload";
 
     private final VyrimCore core;
 
@@ -30,24 +31,34 @@ public class VyrimCoreCommand implements CommandExecutor, TabCompleter {
         this.core = core;
     }
 
+    private boolean hasPermission(CommandSender sender) {
+        if (core == null) {
+            return sender.hasPermission(PERMISSION_ADMIN_RELOAD) || sender.hasPermission(PERMISSION_COMMAND_RELOAD);
+        }
+        if (core.getLuckPermsHook() != null) {
+            return core.getLuckPermsHook().hasPermission(sender, PERMISSION_ADMIN_RELOAD)
+                    || core.getLuckPermsHook().hasPermission(sender, PERMISSION_COMMAND_RELOAD);
+        }
+        return sender.hasPermission(PERMISSION_ADMIN_RELOAD) || sender.hasPermission(PERMISSION_COMMAND_RELOAD);
+    }
+
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
-        // Permission check using LuckPermsHook with fallback to Bukkit permissible
-        if (core.getLuckPermsHook() != null && !core.getLuckPermsHook().hasPermission(sender, PERMISSION_RELOAD)) {
-            sender.sendMessage(Component.text("❌ You do not have permission to execute this command.", NamedTextColor.RED));
-            return true;
-        } else if (core.getLuckPermsHook() == null && !sender.hasPermission(PERMISSION_RELOAD)) {
+        if (!hasPermission(sender)) {
             sender.sendMessage(Component.text("❌ You do not have permission to execute this command.", NamedTextColor.RED));
             return true;
         }
 
         if (args.length == 0 || !args[0].equalsIgnoreCase("reload")) {
-            sender.sendMessage(Component.text("Usage: /" + label + " reload [module]", NamedTextColor.RED));
+            sender.sendMessage(Component.text("Usage: /" + label + " reload [all|<module>]", NamedTextColor.RED));
             return true;
         }
 
-        // /vyrimcore reload (reloads config, hooks, and all modules)
-        if (args.length == 1) {
+        // Disk Refresh: Always refresh config from disk at the very beginning of reload routine
+        core.reloadConfig();
+
+        // /vyrimcore reload OR /vyrimcore reload all
+        if (args.length == 1 || (args.length == 2 && args[1].equalsIgnoreCase("all"))) {
             core.reloadCore();
             sender.sendMessage(Component.text("✔ VyrimCore configuration, hooks, and all modules successfully reloaded.", NamedTextColor.GREEN));
             return true;
@@ -72,9 +83,7 @@ public class VyrimCoreCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, @NotNull String[] args) {
-        if (core.getLuckPermsHook() != null && !core.getLuckPermsHook().hasPermission(sender, PERMISSION_RELOAD)) {
-            return Collections.emptyList();
-        } else if (core.getLuckPermsHook() == null && !sender.hasPermission(PERMISSION_RELOAD)) {
+        if (!hasPermission(sender)) {
             return Collections.emptyList();
         }
 
@@ -83,7 +92,10 @@ public class VyrimCoreCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length == 2 && args[0].equalsIgnoreCase("reload")) {
-            return StringUtil.copyPartialMatches(args[1], core.getModuleManager().getRegisteredModuleNames(), new ArrayList<>());
+            List<String> options = new ArrayList<>();
+            options.add("all");
+            options.addAll(core.getModuleManager().getRegisteredModuleNames());
+            return StringUtil.copyPartialMatches(args[1], options, new ArrayList<>());
         }
 
         return Collections.emptyList();

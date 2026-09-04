@@ -7,11 +7,15 @@ api-version: '1.21.11'
 softdepend: [LuckPerms, PlaceholderAPI, MMOItems, MythicLib]
 
 commands:
-  prefix:
-    description: Player-facing prefix builder controls
-  prefixadmin:
-    description: Staff command to set another player's prefix pieces
   vyrimcore:
     description: Core administrative management command
-    permission: vyrimcore.command.reload
+    permission: vyrimcore.admin.reload
     usage: /<command> reload [module]
+
+permissions:
+  vyrimcore.admin.reload:
+    description: Allows reloading VyrimCore configuration and modules
+    default: op
+  vyrimcore.bypass.biomecompass:
+    description: Allows bypassing the Biome Compass search cooldown
+    default: op

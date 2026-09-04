@@ -385,27 +385,29 @@ public class BiomeCompassGUI implements Listener {
                 return;
             }
 
-            // Cooldown & Permission Bypass Check
+            // 1. Check if the player has vyrimcore.bypass.biomecompass via LuckPermsHook
             boolean bypass = core != null && core.getLuckPermsHook() != null
                     ? core.getLuckPermsHook().hasPermission(player, BiomeCompassModule.PERMISSION_BYPASS)
                     : player.hasPermission(BiomeCompassModule.PERMISSION_BYPASS);
 
-            if (!bypass && module != null && module.isOnCooldown(player.getUniqueId())) {
+            // 2. If bypassed: proceed immediately to async scan. If not: check cooldown
+            if (!bypass && module != null) {
+                // 3. Calculate remaining seconds (lastTime + cooldownMillis - now) / 1000
                 long remaining = module.getRemainingCooldownSeconds(player.getUniqueId());
-                player.sendMessage(module.formatCooldownMessage(remaining));
-                if (locatorService != null && locatorService.isPlaySounds()) {
-                    player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1.0f, 0.5f);
+                // 4. If remaining > 0: cancel search, send formatted cooldown message, close inventory
+                if (remaining > 0) {
+                    player.sendMessage(module.formatCooldownMessage(remaining));
+                    if (locatorService != null && locatorService.isPlaySounds()) {
+                        player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1.0f, 0.5f);
+                    }
+                    player.closeInventory();
+                    return;
                 }
-                player.closeInventory();
-                return;
+                // 5. If remaining <= 0: update cooldown timestamp to current time
+                module.updateSearchTimestamp(player.getUniqueId());
             }
 
             player.closeInventory();
-
-            if (!bypass && module != null) {
-                module.setCooldown(player.getUniqueId());
-            }
-
             locatorService.locateBiome(player, biome, biomeKey, holder.getHand(), holder.getInventorySlot());
         }
     }

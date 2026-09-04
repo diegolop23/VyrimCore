@@ -44,7 +44,8 @@ class VyrimCoreCommandTest {
     @Test
     @DisplayName("Command rejects sender without permission")
     void testPermissionDenied() {
-        when(mockLuckPerms.hasPermission(mockSender, VyrimCoreCommand.PERMISSION_RELOAD)).thenReturn(false);
+        when(mockLuckPerms.hasPermission(mockSender, VyrimCoreCommand.PERMISSION_ADMIN_RELOAD)).thenReturn(false);
+        when(mockLuckPerms.hasPermission(mockSender, VyrimCoreCommand.PERMISSION_COMMAND_RELOAD)).thenReturn(false);
 
         boolean result = command.onCommand(mockSender, mockCommand, "vyrimcore", new String[]{"reload"});
         assertTrue(result);
@@ -56,7 +57,7 @@ class VyrimCoreCommandTest {
     @Test
     @DisplayName("Command sends usage when arguments are invalid or missing")
     void testUsageOnInvalidArgs() {
-        when(mockLuckPerms.hasPermission(mockSender, VyrimCoreCommand.PERMISSION_RELOAD)).thenReturn(true);
+        when(mockLuckPerms.hasPermission(mockSender, VyrimCoreCommand.PERMISSION_ADMIN_RELOAD)).thenReturn(true);
 
         assertTrue(command.onCommand(mockSender, mockCommand, "vyrimcore", new String[]{}));
         assertTrue(command.onCommand(mockSender, mockCommand, "vyrimcore", new String[]{"status"}));
@@ -66,21 +67,27 @@ class VyrimCoreCommandTest {
     }
 
     @Test
-    @DisplayName("/vyrimcore reload triggers full core reload")
+    @DisplayName("/vyrimcore reload and /vyrimcore reload all trigger disk reload and full core reload")
     void testReloadAll() {
-        when(mockLuckPerms.hasPermission(mockSender, VyrimCoreCommand.PERMISSION_RELOAD)).thenReturn(true);
+        when(mockLuckPerms.hasPermission(mockSender, VyrimCoreCommand.PERMISSION_ADMIN_RELOAD)).thenReturn(true);
 
-        boolean result = command.onCommand(mockSender, mockCommand, "vyrimcore", new String[]{"reload"});
-        assertTrue(result);
+        // /vyrimcore reload
+        boolean result1 = command.onCommand(mockSender, mockCommand, "vyrimcore", new String[]{"reload"});
+        assertTrue(result1);
 
-        verify(mockCore, times(1)).reloadCore();
-        verify(mockSender).sendMessage(any(Component.class));
+        // /vyrimcore reload all
+        boolean result2 = command.onCommand(mockSender, mockCommand, "vyrimcore", new String[]{"reload", "all"});
+        assertTrue(result2);
+
+        verify(mockCore, times(2)).reloadConfig();
+        verify(mockCore, times(2)).reloadCore();
+        verify(mockSender, times(2)).sendMessage(any(Component.class));
     }
 
     @Test
-    @DisplayName("/vyrimcore reload <module> reloads matching module")
+    @DisplayName("/vyrimcore reload <module> reloads matching module after disk refresh")
     void testReloadSpecificModule() {
-        when(mockLuckPerms.hasPermission(mockSender, VyrimCoreCommand.PERMISSION_RELOAD)).thenReturn(true);
+        when(mockLuckPerms.hasPermission(mockSender, VyrimCoreCommand.PERMISSION_ADMIN_RELOAD)).thenReturn(true);
         Module mockModule = mock(Module.class);
         when(mockModule.name()).thenReturn("BiomeCompass");
         when(mockManager.getModule("BiomeCompass")).thenReturn(Optional.of(mockModule));
@@ -88,6 +95,7 @@ class VyrimCoreCommandTest {
         boolean result = command.onCommand(mockSender, mockCommand, "vyrimcore", new String[]{"reload", "BiomeCompass"});
         assertTrue(result);
 
+        verify(mockCore, times(1)).reloadConfig();
         verify(mockManager, times(1)).reload(mockModule);
         verify(mockSender).sendMessage(any(Component.class));
     }
@@ -95,21 +103,22 @@ class VyrimCoreCommandTest {
     @Test
     @DisplayName("/vyrimcore reload <invalid> reports unrecognized module")
     void testReloadUnrecognizedModule() {
-        when(mockLuckPerms.hasPermission(mockSender, VyrimCoreCommand.PERMISSION_RELOAD)).thenReturn(true);
+        when(mockLuckPerms.hasPermission(mockSender, VyrimCoreCommand.PERMISSION_ADMIN_RELOAD)).thenReturn(true);
         when(mockManager.getModule("UnknownModule")).thenReturn(Optional.empty());
         when(mockManager.getRegisteredModuleNames()).thenReturn(List.of("BiomeCompass"));
 
         boolean result = command.onCommand(mockSender, mockCommand, "vyrimcore", new String[]{"reload", "UnknownModule"});
         assertTrue(result);
 
+        verify(mockCore, times(1)).reloadConfig();
         verify(mockManager, never()).reload(any(Module.class));
         verify(mockSender).sendMessage(any(Component.class));
     }
 
     @Test
-    @DisplayName("Tab completion suggests 'reload' and module names")
+    @DisplayName("Tab completion suggests 'reload' and 'all' + module names")
     void testTabCompletion() {
-        when(mockLuckPerms.hasPermission(mockSender, VyrimCoreCommand.PERMISSION_RELOAD)).thenReturn(true);
+        when(mockLuckPerms.hasPermission(mockSender, VyrimCoreCommand.PERMISSION_ADMIN_RELOAD)).thenReturn(true);
         when(mockManager.getRegisteredModuleNames()).thenReturn(List.of("BiomeCompass", "Prefixes"));
 
         List<String> completions1 = command.onTabComplete(mockSender, mockCommand, "vyrimcore", new String[]{""});
@@ -119,13 +128,17 @@ class VyrimCoreCommandTest {
         assertEquals(List.of("reload"), completions2);
 
         List<String> completions3 = command.onTabComplete(mockSender, mockCommand, "vyrimcore", new String[]{"reload", ""});
-        assertEquals(List.of("BiomeCompass", "Prefixes"), completions3);
+        assertEquals(List.of("all", "BiomeCompass", "Prefixes"), completions3);
 
         List<String> completions4 = command.onTabComplete(mockSender, mockCommand, "vyrimcore", new String[]{"reload", "Bio"});
         assertEquals(List.of("BiomeCompass"), completions4);
 
+        List<String> completions5 = command.onTabComplete(mockSender, mockCommand, "vyrimcore", new String[]{"reload", "al"});
+        assertEquals(List.of("all"), completions5);
+
         // Without permission
-        when(mockLuckPerms.hasPermission(mockSender, VyrimCoreCommand.PERMISSION_RELOAD)).thenReturn(false);
+        when(mockLuckPerms.hasPermission(mockSender, VyrimCoreCommand.PERMISSION_ADMIN_RELOAD)).thenReturn(false);
+        when(mockLuckPerms.hasPermission(mockSender, VyrimCoreCommand.PERMISSION_COMMAND_RELOAD)).thenReturn(false);
         List<String> completionsNoPerm = command.onTabComplete(mockSender, mockCommand, "vyrimcore", new String[]{"reload", ""});
         assertTrue(completionsNoPerm.isEmpty());
     }
