@@ -1,5 +1,7 @@
 package net.vyrim.core.module.biomecompass;
 
+import io.papermc.paper.datacomponent.DataComponentTypes;
+import io.papermc.paper.datacomponent.item.LodestoneTracker;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -13,17 +15,18 @@ import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.block.Biome;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.CompassMeta;
-import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
-import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.util.BiomeSearchResult;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
@@ -47,7 +50,7 @@ public class BiomeLocatorService {
     private final NamespacedKey pdcTargetWorld;
     private final NamespacedKey pdcTargetDist;
 
-    private final Set<Integer> runningTaskIds = ConcurrentHashMap.newKeySet();
+    private final Set<CompletableFuture<?>> activeFutures = ConcurrentHashMap.newKeySet();
 
     public BiomeLocatorService(VyrimCore core) {
         this.core = core;
@@ -69,12 +72,15 @@ public class BiomeLocatorService {
 
     /**
      * Dispatches an asynchronous biome location search.
-     *
-     * @param player   the player searching for a biome
-     * @param biome    the target Biome
-     * @param biomeKey the NamespacedKey identifying the biome
      */
     public void locateBiome(Player player, Biome biome, NamespacedKey biomeKey) {
+        locateBiome(player, biome, biomeKey, EquipmentSlot.HAND, player.getInventory().getHeldItemSlot());
+    }
+
+    /**
+     * Dispatches an asynchronous biome location search for a specific item hand and slot.
+     */
+    public void locateBiome(Player player, Biome biome, NamespacedKey biomeKey, EquipmentSlot hand, int slot) {
         UUID playerUuid = player.getUniqueId();
         Location playerLoc = player.getLocation().clone();
         World world = playerLoc.getWorld();
@@ -92,38 +98,39 @@ public class BiomeLocatorService {
             player.playSound(playerLoc, Sound.UI_BUTTON_CLICK, 0.7f, 1.2f);
         }
 
-        BukkitTask[] taskRef = new BukkitTask[1];
-        taskRef[0] = Bukkit.getScheduler().runTaskAsynchronously(core, () -> {
-            try {
-                Location target = world != null ? world.locateNearestBiome(playerLoc, biome, searchRadius) : null;
+        CompletableFuture<BiomeSearchResult> future = CompletableFuture.supplyAsync(() -> {
+            if (world == null) return null;
+            // Vanilla-speed sampling: horizontalInterval = 32, verticalInterval = 64
+            return world.locateNearestBiome(playerLoc, searchRadius, 32, 64, biome);
+        });
 
-                Bukkit.getScheduler().runTask(core, () -> {
-                    runningTaskIds.remove(taskRef[0].getTaskId());
-                    handleSearchResult(playerUuid, biomeKey, friendlyName, playerLoc, target, searchRadius);
-                });
-            } catch (Exception ex) {
-                core.getLogger().log(Level.WARNING, "Failed to locate biome " + biomeKey + ": " + ex.getMessage(), ex);
-                Bukkit.getScheduler().runTask(core, () -> {
-                    runningTaskIds.remove(taskRef[0].getTaskId());
+        activeFutures.add(future);
+
+        future.whenComplete((result, ex) -> {
+            activeFutures.remove(future);
+            Bukkit.getScheduler().runTask(core, () -> {
+                if (ex != null) {
+                    core.getLogger().log(Level.WARNING, "Failed to locate biome " + biomeKey + ": " + ex.getMessage(), ex);
                     Player p = Bukkit.getPlayer(playerUuid);
                     if (p != null && p.isOnline()) {
                         p.sendMessage(Component.text("❌ An error occurred while searching for the biome.", NamedTextColor.RED));
                     }
-                });
-            }
+                    return;
+                }
+                handleSearchResult(playerUuid, biomeKey, friendlyName, playerLoc, result, searchRadius, hand, slot);
+            });
         });
-
-        runningTaskIds.add(taskRef[0].getTaskId());
     }
 
     private void handleSearchResult(UUID playerUuid, NamespacedKey biomeKey, String friendlyName,
-                                    Location playerLoc, Location target, int searchRadius) {
+                                    Location playerLoc, BiomeSearchResult searchResult, int searchRadius,
+                                    EquipmentSlot hand, int slot) {
         Player player = Bukkit.getPlayer(playerUuid);
         if (player == null || !player.isOnline()) {
             return;
         }
 
-        if (target == null) {
+        if (searchResult == null || searchResult.getLocation() == null) {
             player.sendMessage(Component.text()
                     .append(Component.text("❌ ", NamedTextColor.RED))
                     .append(Component.text("No ", NamedTextColor.GRAY))
@@ -137,8 +144,13 @@ public class BiomeLocatorService {
             return;
         }
 
-        ItemStack compass = findCompassItem(player);
-        if (compass == null || !(compass.getItemMeta() instanceof CompassMeta compassMeta)) {
+        Location target = searchResult.getLocation().clone();
+        if (target.getWorld() == null && playerLoc.getWorld() != null) {
+            target.setWorld(playerLoc.getWorld());
+        }
+
+        ItemStack compass = findTargetItem(player, hand, slot);
+        if (compass == null || compass.getType().isAir()) {
             player.sendMessage(Component.text("❌ Could not calibrate: You are no longer holding a compass!", NamedTextColor.RED));
             if (isPlaySounds()) {
                 player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1.0f, 0.5f);
@@ -146,25 +158,35 @@ public class BiomeLocatorService {
             return;
         }
 
-        // Calibrate lodestone needle (untracked points straight to coordinates)
-        compassMeta.setLodestone(target);
-        compassMeta.setLodestoneTracked(false);
-
         double distance = playerLoc.distance(target);
         long blockDist = Math.round(distance);
 
-        // State persistence in PDC
-        PersistentDataContainer pdc = compassMeta.getPersistentDataContainer();
-        pdc.set(pdcTargetBiome, PersistentDataType.STRING, biomeKey.toString());
-        pdc.set(pdcTargetX, PersistentDataType.INTEGER, target.getBlockX());
-        pdc.set(pdcTargetY, PersistentDataType.INTEGER, target.getBlockY());
-        pdc.set(pdcTargetZ, PersistentDataType.INTEGER, target.getBlockZ());
-        pdc.set(pdcTargetWorld, PersistentDataType.STRING, target.getWorld() != null ? target.getWorld().getName() : "");
-        pdc.set(pdcTargetDist, PersistentDataType.LONG, blockDist);
+        // Calibrate lodestone needle and update lore/PDC via modern editMeta
+        compass.editMeta(CompassMeta.class, compassMeta -> {
+            compassMeta.setLodestone(target);
+            compassMeta.setLodestoneTracked(false);
 
-        // Update lore while preserving any existing MMOItems lore
-        updateCompassLore(compassMeta, friendlyName, target, blockDist);
-        compass.setItemMeta(compassMeta);
+            PersistentDataContainer pdc = compassMeta.getPersistentDataContainer();
+            pdc.set(pdcTargetBiome, PersistentDataType.STRING, biomeKey.toString());
+            pdc.set(pdcTargetX, PersistentDataType.INTEGER, target.getBlockX());
+            pdc.set(pdcTargetY, PersistentDataType.INTEGER, target.getBlockY());
+            pdc.set(pdcTargetZ, PersistentDataType.INTEGER, target.getBlockZ());
+            pdc.set(pdcTargetWorld, PersistentDataType.STRING, target.getWorld() != null ? target.getWorld().getName() : "");
+            pdc.set(pdcTargetDist, PersistentDataType.LONG, blockDist);
+
+            updateCompassLore(compassMeta, friendlyName, target, blockDist);
+        });
+
+        // Set modern Paper 1.21+ minecraft:lodestone_tracker Data Component
+        try {
+            compass.setData(DataComponentTypes.LODESTONE_TRACKER, LodestoneTracker.lodestoneTracker(target, false));
+        } catch (Throwable ignored) {
+            // DataComponentTypes fallback handled by CompassMeta
+        }
+
+        // Ensure the updated item is saved to the player's inventory slot
+        setTargetItem(player, hand, slot, compass);
+        player.updateInventory();
 
         if (isPlaySounds()) {
             player.playSound(player.getLocation(), Sound.ITEM_LODESTONE_COMPASS_LOCK, 1.0f, 1.0f);
@@ -217,30 +239,41 @@ public class BiomeLocatorService {
         meta.lore(newLore);
     }
 
-    private ItemStack findCompassItem(Player player) {
+    private ItemStack findTargetItem(Player player, EquipmentSlot hand, int slot) {
+        if (hand == EquipmentSlot.OFF_HAND || slot == 40) {
+            ItemStack off = player.getInventory().getItemInOffHand();
+            if (isCompass(off)) return off;
+        }
+        if (slot >= 0 && slot < 9) {
+            ItemStack slotItem = player.getInventory().getItem(slot);
+            if (isCompass(slotItem)) return slotItem;
+        }
         ItemStack main = player.getInventory().getItemInMainHand();
-        if (isCompass(main)) {
-            return main;
-        }
+        if (isCompass(main)) return main;
         ItemStack off = player.getInventory().getItemInOffHand();
-        if (isCompass(off)) {
-            return off;
-        }
+        if (isCompass(off)) return off;
         for (int i = 0; i < 9; i++) {
             ItemStack item = player.getInventory().getItem(i);
-            if (isCompass(item)) {
-                return item;
-            }
+            if (isCompass(item)) return item;
         }
         return null;
     }
 
+    private void setTargetItem(Player player, EquipmentSlot hand, int slot, ItemStack item) {
+        if (hand == EquipmentSlot.OFF_HAND || slot == 40) {
+            player.getInventory().setItemInOffHand(item);
+        } else if (slot >= 0 && slot < 9) {
+            player.getInventory().setItem(slot, item);
+        } else {
+            player.getInventory().setItemInMainHand(item);
+        }
+    }
+
     private boolean isCompass(ItemStack item) {
-        if (item == null || item.getType() == Material.AIR) {
+        if (item == null || item.getType().isAir()) {
             return false;
         }
-        ItemMeta meta = item.getItemMeta();
-        return item.getType() == Material.COMPASS || meta instanceof CompassMeta;
+        return item.getType() == Material.COMPASS || item.getItemMeta() instanceof CompassMeta;
     }
 
     public static String formatBiomeName(NamespacedKey key) {
@@ -267,9 +300,9 @@ public class BiomeLocatorService {
      * Cancels all active async search tasks during module shutdown.
      */
     public void shutdown() {
-        for (int taskId : runningTaskIds) {
-            Bukkit.getScheduler().cancelTask(taskId);
+        for (CompletableFuture<?> future : activeFutures) {
+            future.cancel(true);
         }
-        runningTaskIds.clear();
+        activeFutures.clear();
     }
 }

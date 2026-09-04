@@ -15,13 +15,16 @@ class BiomeCompassModuleTest {
     @DisplayName("BiomeCompassHolder holds correct state without player references")
     void testBiomeCompassHolder() {
         UUID uuid = UUID.randomUUID();
-        BiomeCompassHolder holder = new BiomeCompassHolder(uuid, World.Environment.NORMAL, 0);
+        BiomeCompassHolder holder = new BiomeCompassHolder(uuid, World.Environment.NORMAL, 0,
+                org.bukkit.inventory.EquipmentSlot.OFF_HAND, 40);
         holder.setTotalPages(3);
 
         assertEquals(uuid, holder.getPlayerUuid());
         assertEquals(World.Environment.NORMAL, holder.getEnvironment());
         assertEquals(0, holder.getCurrentPage());
         assertEquals(3, holder.getTotalPages());
+        assertEquals(org.bukkit.inventory.EquipmentSlot.OFF_HAND, holder.getHand());
+        assertEquals(40, holder.getInventorySlot());
 
         holder.setCurrentPage(2);
         assertEquals(2, holder.getCurrentPage());

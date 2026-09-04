@@ -35,6 +35,9 @@ public final class VyrimCore extends JavaPlugin {
         if (moduleManager != null) {
             moduleManager.disableAll();
         }
+        if (mmoItemsHook != null) {
+            mmoItemsHook.close();
+        }
         if (storageManager != null) {
             storageManager.close();
         }

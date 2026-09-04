@@ -1,5 +1,6 @@
 package net.vyrim.core.module.biomecompass;
 
+import io.papermc.paper.registry.RegistryAccess;
 import io.papermc.paper.registry.RegistryKey;
 import io.papermc.paper.registry.TypedKey;
 import io.papermc.paper.registry.tag.Tag;
@@ -20,6 +21,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -64,24 +66,42 @@ public class BiomeCompassGUI implements Listener {
         this.pdcActionKey = new NamespacedKey(core, "gui_action_key");
     }
 
-    /**
-     * Opens the biome selection GUI for the player at page 0.
-     */
-    public void open(Player player) {
-        openPage(player, 0);
+    public static Registry<Biome> getBiomeRegistry() {
+        return RegistryAccess.registryAccess().getRegistry(RegistryKey.BIOME);
     }
 
     /**
-     * Opens the biome selection GUI for the player at the given page.
+     * Opens the biome selection GUI for the player at page 0 for main hand.
+     */
+    public void open(Player player) {
+        openPage(player, 0, EquipmentSlot.HAND, player.getInventory().getHeldItemSlot());
+    }
+
+    /**
+     * Opens the biome selection GUI for the player at page 0 for the specified hand and slot.
+     */
+    public void open(Player player, EquipmentSlot hand, int inventorySlot) {
+        openPage(player, 0, hand, inventorySlot);
+    }
+
+    /**
+     * Opens the biome selection GUI for the player at the given page for main hand.
      */
     public void openPage(Player player, int page) {
+        openPage(player, page, EquipmentSlot.HAND, player.getInventory().getHeldItemSlot());
+    }
+
+    /**
+     * Opens the biome selection GUI for the player at the given page for the specified hand and slot.
+     */
+    public void openPage(Player player, int page, EquipmentSlot hand, int inventorySlot) {
         World.Environment environment = player.getWorld().getEnvironment();
         List<Biome> biomes = getBiomesForEnvironment(environment);
 
         int totalPages = Math.max(1, (int) Math.ceil((double) biomes.size() / PAGE_SIZE));
         int clampedPage = Math.max(0, Math.min(page, totalPages - 1));
 
-        BiomeCompassHolder holder = new BiomeCompassHolder(player.getUniqueId(), environment, clampedPage);
+        BiomeCompassHolder holder = new BiomeCompassHolder(player.getUniqueId(), environment, clampedPage, hand, inventorySlot);
         holder.setTotalPages(totalPages);
 
         Component title = Component.text("Biome Selector (Page " + (clampedPage + 1) + "/" + totalPages + ")",
@@ -105,12 +125,13 @@ public class BiomeCompassGUI implements Listener {
     }
 
     /**
-     * Queries Registry.BIOME dynamically and filters by dimension.
+     * Queries RegistryAccess dynamically and filters by dimension.
      */
     public List<Biome> getBiomesForEnvironment(World.Environment environment) {
+        Registry<Biome> biomeRegistry = getBiomeRegistry();
         List<Biome> result = new ArrayList<>();
-        for (Biome biome : Registry.BIOME) {
-            if (isBiomeInEnvironment(biome, environment)) {
+        for (Biome biome : biomeRegistry) {
+            if (isBiomeInEnvironment(biome, environment, biomeRegistry)) {
                 result.add(biome);
             }
         }
@@ -122,32 +143,46 @@ public class BiomeCompassGUI implements Listener {
      * Determines whether a biome belongs to the specified dimension environment.
      */
     public static boolean isBiomeInEnvironment(Biome biome, World.Environment env) {
+        Registry<Biome> registry = null;
+        try {
+            registry = getBiomeRegistry();
+        } catch (Throwable ignored) {
+        }
+        return isBiomeInEnvironment(biome, env, registry);
+    }
+
+    /**
+     * Determines whether a biome belongs to the specified dimension environment using the provided registry.
+     */
+    public static boolean isBiomeInEnvironment(Biome biome, World.Environment env, Registry<Biome> biomeRegistry) {
         if (biome == null || biome.getKey() == null) {
             return false;
         }
         NamespacedKey key = biome.getKey();
         String path = key.getKey().toLowerCase();
 
-        // Check Paper registry tags if available
-        try {
-            if (env == World.Environment.NETHER) {
-                Tag<Biome> tag = Registry.BIOME.getTag(TagKey.create(RegistryKey.BIOME, Key.key("minecraft:is_nether")));
-                if (tag != null && tag.contains(TypedKey.create(RegistryKey.BIOME, key))) {
-                    return true;
+        // Check Paper registry tags if registry is available
+        if (biomeRegistry != null) {
+            try {
+                if (env == World.Environment.NETHER) {
+                    Tag<Biome> tag = biomeRegistry.getTag(TagKey.create(RegistryKey.BIOME, Key.key("minecraft:is_nether")));
+                    if (tag != null && tag.contains(TypedKey.create(RegistryKey.BIOME, key))) {
+                        return true;
+                    }
+                } else if (env == World.Environment.THE_END) {
+                    Tag<Biome> tag = biomeRegistry.getTag(TagKey.create(RegistryKey.BIOME, Key.key("minecraft:is_end")));
+                    if (tag != null && tag.contains(TypedKey.create(RegistryKey.BIOME, key))) {
+                        return true;
+                    }
+                } else if (env == World.Environment.NORMAL) {
+                    Tag<Biome> tag = biomeRegistry.getTag(TagKey.create(RegistryKey.BIOME, Key.key("minecraft:is_overworld")));
+                    if (tag != null && tag.contains(TypedKey.create(RegistryKey.BIOME, key))) {
+                        return true;
+                    }
                 }
-            } else if (env == World.Environment.THE_END) {
-                Tag<Biome> tag = Registry.BIOME.getTag(TagKey.create(RegistryKey.BIOME, Key.key("minecraft:is_end")));
-                if (tag != null && tag.contains(TypedKey.create(RegistryKey.BIOME, key))) {
-                    return true;
-                }
-            } else if (env == World.Environment.NORMAL) {
-                Tag<Biome> tag = Registry.BIOME.getTag(TagKey.create(RegistryKey.BIOME, Key.key("minecraft:is_overworld")));
-                if (tag != null && tag.contains(TypedKey.create(RegistryKey.BIOME, key))) {
-                    return true;
-                }
+            } catch (Throwable ignored) {
+                // Fall through to fallback sets if tags are not loaded/supported in environment
             }
-        } catch (Throwable ignored) {
-            // Fall through to fallback sets if tags are not loaded/supported in environment
         }
 
         boolean isNether = NETHER_FALLBACK.contains(path) || path.contains("nether");
@@ -317,12 +352,12 @@ public class BiomeCompassGUI implements Listener {
         String action = pdc.get(pdcActionKey, PersistentDataType.STRING);
         if (ACTION_PREV_PAGE.equals(action)) {
             player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 0.7f, 1.0f);
-            openPage(player, holder.getCurrentPage() - 1);
+            openPage(player, holder.getCurrentPage() - 1, holder.getHand(), holder.getInventorySlot());
             return;
         }
         if (ACTION_NEXT_PAGE.equals(action)) {
             player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 0.7f, 1.0f);
-            openPage(player, holder.getCurrentPage() + 1);
+            openPage(player, holder.getCurrentPage() + 1, holder.getHand(), holder.getInventorySlot());
             return;
         }
         if (ACTION_INFO.equals(action)) {
@@ -337,7 +372,7 @@ public class BiomeCompassGUI implements Listener {
                 return;
             }
 
-            Biome biome = Registry.BIOME.get(biomeKey);
+            Biome biome = getBiomeRegistry().get(biomeKey);
             if (biome == null) {
                 player.sendMessage(Component.text("❌ Selected biome is no longer valid.", NamedTextColor.RED));
                 player.closeInventory();
@@ -345,7 +380,7 @@ public class BiomeCompassGUI implements Listener {
             }
 
             player.closeInventory();
-            locatorService.locateBiome(player, biome, biomeKey);
+            locatorService.locateBiome(player, biome, biomeKey, holder.getHand(), holder.getInventorySlot());
         }
     }
 }

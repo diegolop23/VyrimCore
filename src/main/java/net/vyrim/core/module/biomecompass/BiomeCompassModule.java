@@ -109,6 +109,11 @@ public class BiomeCompassModule implements Module {
             locatorService.shutdown();
         }
 
+        // Unregister custom ability
+        if (mmoItemsHook != null && ability != null) {
+            mmoItemsHook.unregisterSkill(ability);
+        }
+
         this.locatorService = null;
         this.gui = null;
         this.ability = null;

@@ -5,6 +5,7 @@ import io.lumine.mythic.lib.skill.handler.SkillHandler;
 import io.lumine.mythic.lib.skill.result.def.SimpleSkillResult;
 import io.lumine.mythic.lib.skill.trigger.TriggerType;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.EquipmentSlot;
 
 /**
  * MMOItems & MythicLib custom ability handler (ID: BIOME_LOCATOR).
@@ -18,7 +19,7 @@ public class BiomeCompassAbility extends SkillHandler<SimpleSkillResult> {
     private final BiomeCompassModule module;
 
     public BiomeCompassAbility(BiomeCompassModule module, BiomeCompassGUI gui) {
-        super(ABILITY_ID);
+        super(new org.bukkit.configuration.file.YamlConfiguration().createSection(ABILITY_ID));
         this.module = module;
         this.gui = gui;
     }
@@ -39,12 +40,21 @@ public class BiomeCompassAbility extends SkillHandler<SimpleSkillResult> {
 
     @Override
     public void whenCast(SimpleSkillResult result, SkillMetadata meta) {
+        whenCast(meta);
+    }
+
+    public void whenCast(SkillMetadata meta) {
         if (!module.isEnabled()) {
             return;
         }
         Player player = meta.getCaster().getData().getPlayer();
         if (player != null && player.isOnline()) {
-            gui.open(player);
+            EquipmentSlot bukkitSlot = EquipmentSlot.HAND;
+            if (meta.getCaster().getActionHand() != null) {
+                bukkitSlot = meta.getCaster().getActionHand().toBukkit();
+            }
+            int slot = (bukkitSlot == EquipmentSlot.OFF_HAND) ? 40 : player.getInventory().getHeldItemSlot();
+            gui.open(player, bukkitSlot, slot);
         }
     }
 }
