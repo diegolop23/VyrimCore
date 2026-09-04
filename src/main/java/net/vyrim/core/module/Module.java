@@ -14,4 +14,11 @@ public interface Module {
     }
     void onEnable(VyrimCore plugin);
     void onDisable();
+
+    /**
+     * Whether the module is currently active.
+     */
+    default boolean isEnabled() {
+        return false;
+    }
 }

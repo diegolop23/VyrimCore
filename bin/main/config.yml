@@ -1,0 +1,12 @@
+# ==============================================================================
+# VyrimCore Configuration
+# ==============================================================================
+
+modules:
+  biome_compass:
+    # Controls whether the Biome Compass module is enabled
+    enabled: true
+    # Maximum block radius to scan when locating the nearest biome
+    search_radius: 6400
+    # Whether audio cues are played during calibration, success, and errors
+    play_sounds: true
