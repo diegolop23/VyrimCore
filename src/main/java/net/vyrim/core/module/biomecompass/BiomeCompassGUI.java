@@ -39,8 +39,16 @@ import java.util.Set;
  */
 public class BiomeCompassGUI implements Listener {
 
-    public static final int PAGE_SIZE = 45;
-    public static final int INVENTORY_SIZE = 54;
+    public static final int GRID_COLS = 9;
+    public static final int GRID_ROWS = 6;
+    public static final int CONTENT_COLS = 7; // columns 1-7 (0 and 8 are border)
+    public static final int CONTENT_ROWS = 4; // rows 1-4 (row 0 and 5 are border)
+    public static final int PAGE_SIZE = CONTENT_COLS * CONTENT_ROWS; // 28
+    public static final int INVENTORY_SIZE = GRID_ROWS * GRID_COLS;  // 54
+
+    private static final int NAV_PREV_SLOT = 48;
+    private static final int NAV_INFO_SLOT = 49;
+    private static final int NAV_NEXT_SLOT = 50;
 
     private static final String ACTION_PREV_PAGE = "PREV_PAGE";
     private static final String ACTION_NEXT_PAGE = "NEXT_PAGE";
@@ -123,7 +131,7 @@ public class BiomeCompassGUI implements Listener {
 
         for (int i = 0; i < pageBiomes.size(); i++) {
             Biome biome = pageBiomes.get(i);
-            inventory.setItem(i, createBiomeIcon(biome, envName));
+            inventory.setItem(contentIndexToSlot(i), createBiomeIcon(biome, envName));
         }
 
         renderNavigationControls(inventory, clampedPage, totalPages, biomes.size());
@@ -236,8 +244,15 @@ public class BiomeCompassGUI implements Listener {
 
     private void renderNavigationControls(Inventory inventory, int page, int totalPages, int totalBiomes) {
         ItemStack filler = createFillerItem();
-        for (int slot = PAGE_SIZE; slot < INVENTORY_SIZE; slot++) {
-            inventory.setItem(slot, filler);
+
+        // Full border: top row, bottom row, and side columns on the middle rows
+        for (int col = 0; col < GRID_COLS; col++) {
+            inventory.setItem(col, filler);                              // row 0
+            inventory.setItem((GRID_ROWS - 1) * GRID_COLS + col, filler); // row 5
+        }
+        for (int row = 1; row < GRID_ROWS - 1; row++) {
+            inventory.setItem(row * GRID_COLS, filler);                  // col 0
+            inventory.setItem(row * GRID_COLS + (GRID_COLS - 1), filler);// col 8
         }
 
         // Previous Page
@@ -250,7 +265,9 @@ public class BiomeCompassGUI implements Listener {
                     .decoration(TextDecoration.ITALIC, false)));
             meta.getPersistentDataContainer().set(pdcActionKey, PersistentDataType.STRING, ACTION_PREV_PAGE);
             prev.setItemMeta(meta);
-            inventory.setItem(45, prev);
+            inventory.setItem(NAV_PREV_SLOT, prev);
+        } else {
+            inventory.setItem(NAV_PREV_SLOT, filler);
         }
 
         // Center Info
@@ -262,8 +279,9 @@ public class BiomeCompassGUI implements Listener {
                 Component.text("Total Biomes: " + totalBiomes, NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)
         ));
         infoMeta.getPersistentDataContainer().set(pdcActionKey, PersistentDataType.STRING, ACTION_INFO);
+        infoMeta.setItemModel(NamespacedKey.fromString("vyrim:utility/naturescompass"));
         info.setItemMeta(infoMeta);
-        inventory.setItem(49, info);
+        inventory.setItem(NAV_INFO_SLOT, info);
 
         // Next Page
         if (page < totalPages - 1) {
@@ -275,8 +293,19 @@ public class BiomeCompassGUI implements Listener {
                     .decoration(TextDecoration.ITALIC, false)));
             meta.getPersistentDataContainer().set(pdcActionKey, PersistentDataType.STRING, ACTION_NEXT_PAGE);
             next.setItemMeta(meta);
-            inventory.setItem(53, next);
+            inventory.setItem(NAV_NEXT_SLOT, next);
+        } else {
+            inventory.setItem(NAV_NEXT_SLOT, filler);
         }
+    }
+
+    /** Maps a content index (0..PAGE_SIZE-1) to its actual inventory slot inside the bordered grid. */
+    private int contentIndexToSlot(int index) {
+        int row = index / CONTENT_COLS;      // 0..3
+        int col = index % CONTENT_COLS;      // 0..6
+        int actualRow = row + 1;             // skip border row 0
+        int actualCol = col + 1;             // skip border col 0
+        return actualRow * GRID_COLS + actualCol;
     }
 
     private ItemStack createFillerItem() {
