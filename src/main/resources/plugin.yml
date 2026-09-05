@@ -3,12 +3,20 @@ version: '${version}'
 
 main: net.vyrim.core.VyrimCore
 api-version: '1.21.11'
-load: POSTWORLD
 
-softdepend: [LuckPerms, PlaceholderAPI]
+softdepend: [LuckPerms, PlaceholderAPI, MythicLib]
+loadbefore: [MMOItems]
 
 commands:
-  prefix:
-    description: Player-facing prefix builder controls
-  prefixadmin:
-    description: Staff command to set another player's prefix pieces
+  vyrimcore:
+    description: Core administrative management command
+    permission: vyrimcore.admin.reload
+    usage: /<command> reload [module]
+
+permissions:
+  vyrimcore.admin.reload:
+    description: Allows reloading VyrimCore configuration and modules
+    default: op
+  vyrimcore.bypass.biomecompass:
+    description: Allows bypassing the Biome Compass search cooldown
+    default: op

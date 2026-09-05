@@ -1,0 +1,46 @@
+# ==============================================================================
+# VyrimCore Configuration
+# ==============================================================================
+
+modules:
+  biome_compass:
+    # Controls whether the Biome Compass module is enabled
+    enabled: true
+    # Maximum block radius to scan when locating the nearest biome
+    radius: 6400
+    # Cooldown duration in seconds between compass search activations (0 to disable) vyrimcore.bypass.biomecompass
+    cooldown: 30
+    # Whether audio cues are played during calibration, success, and errors
+    play_sounds: true
+    # Tiered biome progression configuration
+    biome_tiers:
+      # tier number -> list of biome path names (Registry key path, e.g. "swamp", "deep_dark")
+      # Any biome NOT listed in any tier here implicitly defaults to tier 1.
+      2: [swamp, ice_spikes, cherry_grove, badlands, eroded_badlands]
+      3: [deep_dark, mushroom_fields, pale_garden]
+
+    item_tiers:
+      # MMOItems "Type.Id" -> tier that item unlocks. Populate once item IDs are finalized.
+      COMPASS.NATURE_COMPASS_T1: 1
+      COMPASS.NATURE_COMPASS_T2: 2
+      COMPASS.NATURE_COMPASS_T3: 3
+
+    show_locked_biomes: true   # if false, locked biomes are omitted from the GUI entirely
+    locked_biome_lore: "&c🔒 Requires a higher-tier Nature Compass"
+
+    same_biome_min_distance: 150   # blocks; ring-probe search radius / discard threshold
+    same_biome_probe_count: 8      # number of directional probes around the player
+
+    # Configurable module messages (supports MiniMessage and legacy color codes)
+    messages:
+      cooldown: "<red>You must wait <yellow>%seconds%s</yellow> before scanning again!</red>"
+      scanning: "<gray>Locating closest <aqua>%biome%</aqua>...</gray>"
+      found: "<green>Compass tuned to <aqua>%biome%</aqua> (~%distance%m away)!</green>"
+      not_found: "<red>No %biome% found within range.</red>"
+      too_close_to_border: "<red>Cannot search: You are too close to the world border!</red>"
+      outside_border: "<red>Closest %biome% is outside the world border.</red>"
+      mode_nearest_name: "&aMode: Nearest"
+      mode_nearest_lore: "&7Always returns the closest match,\n&7even the patch you're standing in."
+      mode_ignore_name: "&6Mode: Ignore Current Biome"
+      mode_ignore_lore: "&7Skips the patch you're standing in\n&7and searches for the next-nearest one."
+
