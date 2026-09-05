@@ -55,8 +55,11 @@ public final class ModuleManager {
                 }
                 continue;
             }
-            if (!module.isConfigEnabled(core) || !module.isAvailable(core)) {
-                core.getLogger().warning("[Modules] Skipping '" + module.name() + "': disabled in config or missing dependency.");
+            if (!module.isConfigEnabled(core)) {
+                core.getLogger().info("[Modules] Skipping '" + module.name() + "': disabled in config.yml.");
+                continue;
+            }
+            if (!module.isAvailable(core)) {
                 continue;
             }
             try {
@@ -97,7 +100,7 @@ public final class ModuleManager {
                 if (!enabled.contains(module)) {
                     enabled.add(module);
                 }
-                core.getLogger().info("[Modules] Enabled '" + module.name() + "' on reload.");
+                core.getLogger().info("[Modules] Enabled '" + module.name() + "'.");
             } else if (!configEnabled && currentlyEnabled) {
                 module.disable();
                 enabled.remove(module);

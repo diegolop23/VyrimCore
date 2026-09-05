@@ -62,8 +62,18 @@ public class BiomeCompassModule implements Module {
             return false;
         }
 
-        if (mmoItemsHook == null || !mmoItemsHook.isAvailable()) {
-            core.getLogger().warning("[BiomeCompass] MMOItems or MythicLib is missing/disabled. Skipping module.");
+        if (mmoItemsHook == null || !mmoItemsHook.isMythicLibAvailable()) {
+            core.getLogger().warning("[BiomeCompass] MythicLib is missing or disabled. Skipping module.");
+            return false;
+        }
+
+        if (mmoItemsHook.isMMOItemsPending()) {
+            core.getLogger().info("[BiomeCompass] MMOItems is loading after VyrimCore; module will activate once MMOItems enables.");
+            return false;
+        }
+
+        if (!mmoItemsHook.isFullyAvailable()) {
+            core.getLogger().warning("[BiomeCompass] MMOItems is missing or disabled. Skipping module.");
             return false;
         }
 
@@ -92,7 +102,6 @@ public class BiomeCompassModule implements Module {
 
         this.locatorService = new BiomeLocatorService(core);
         this.gui = new BiomeCompassGUI(core, locatorService, this);
-        this.ability = new BiomeCompassAbility(this, gui);
 
         // Register GUI click listener
         Bukkit.getPluginManager().registerEvents(gui, core);
@@ -109,13 +118,29 @@ public class BiomeCompassModule implements Module {
         // Schedule periodic asynchronous cleanup of expired cooldown entries (every 60 seconds)
         this.cleanupTask = Bukkit.getScheduler().runTaskTimerAsynchronously(core, this::cleanupExpiredCooldowns, 1200L, 1200L);
 
-        // Register custom MMOItems ability (ID: BIOME_LOCATOR)
+        // Bind GUI to the ability and ensure registered
+        if (this.ability == null) {
+            this.ability = new BiomeCompassAbility(this, gui);
+        } else {
+            this.ability.bind(this, gui);
+        }
+
         if (mmoItemsHook != null) {
             mmoItemsHook.registerSkill(ability);
         }
 
         this.enabled = true;
         core.getLogger().info("[BiomeCompass] Biome Compass module successfully enabled.");
+    }
+
+    /**
+     * Returns or lazily creates the BiomeCompassAbility instance.
+     */
+    public BiomeCompassAbility getOrCreateAbility() {
+        if (this.ability == null) {
+            this.ability = new BiomeCompassAbility(this, this.gui);
+        }
+        return this.ability;
     }
 
     /**
@@ -159,9 +184,9 @@ public class BiomeCompassModule implements Module {
             locatorService.shutdown();
         }
 
-        // Unregister custom ability
-        if (mmoItemsHook != null && ability != null) {
-            mmoItemsHook.unregisterSkill(ability);
+        // Unbind custom ability reference
+        if (ability != null) {
+            ability.bind(null, null);
         }
 
         this.locatorService = null;

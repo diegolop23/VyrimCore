@@ -8,7 +8,7 @@ modules:
     enabled: true
     # Maximum block radius to scan when locating the nearest biome
     radius: 6400
-    # Cooldown duration in seconds between compass search activations (0 to disable)
+    # Cooldown duration in seconds between compass search activations (0 to disable) vyrimcore.bypass.biomecompass
     cooldown: 30
     # Whether audio cues are played during calibration, success, and errors
     play_sounds: true

@@ -15,13 +15,62 @@ public class BiomeCompassAbility extends SkillHandler<SimpleSkillResult> {
 
     public static final String ABILITY_ID = "BIOME_LOCATOR";
 
-    private final BiomeCompassGUI gui;
-    private final BiomeCompassModule module;
+    private BiomeCompassGUI gui;
+    private BiomeCompassModule module;
+
+    public BiomeCompassAbility() {
+        this(null, null);
+    }
+
+    public BiomeCompassAbility(BiomeCompassModule module) {
+        this(module, null);
+    }
 
     public BiomeCompassAbility(BiomeCompassModule module, BiomeCompassGUI gui) {
         super(new org.bukkit.configuration.file.YamlConfiguration().createSection(ABILITY_ID));
         this.module = module;
         this.gui = gui;
+    }
+
+    /**
+     * Binds or updates the active BiomeCompassModule and GUI instances.
+     *
+     * @param module the BiomeCompassModule instance
+     * @param gui    the active GUI instance
+     */
+    public void bind(BiomeCompassModule module, BiomeCompassGUI gui) {
+        this.module = module;
+        this.gui = gui;
+    }
+
+    public BiomeCompassModule getModule() {
+        return resolveModule();
+    }
+
+    public BiomeCompassGUI getGui() {
+        return resolveGui();
+    }
+
+    private BiomeCompassModule resolveModule() {
+        if (this.module != null) {
+            return this.module;
+        }
+        net.vyrim.core.VyrimCore core = net.vyrim.core.VyrimCore.getInstance();
+        if (core != null && core.modules() != null) {
+            return core.modules().getModule(BiomeCompassModule.MODULE_NAME)
+                    .filter(m -> m instanceof BiomeCompassModule)
+                    .map(m -> (BiomeCompassModule) m)
+                    .orElse(null);
+        }
+        return null;
+    }
+
+    private BiomeCompassGUI resolveGui() {
+        if (this.gui != null) {
+            return this.gui;
+        }
+        BiomeCompassModule mod = resolveModule();
+        return mod != null ? mod.getGui() : null;
     }
 
     @Override
@@ -31,7 +80,8 @@ public class BiomeCompassAbility extends SkillHandler<SimpleSkillResult> {
 
     @Override
     public SimpleSkillResult getResult(SkillMetadata meta) {
-        if (!module.isEnabled()) {
+        BiomeCompassModule mod = resolveModule();
+        if (mod == null || !mod.isEnabled()) {
             return new SimpleSkillResult(false);
         }
         Player player = meta.getCaster().getData().getPlayer();
@@ -44,7 +94,9 @@ public class BiomeCompassAbility extends SkillHandler<SimpleSkillResult> {
     }
 
     public void whenCast(SkillMetadata meta) {
-        if (!module.isEnabled()) {
+        BiomeCompassModule mod = resolveModule();
+        BiomeCompassGUI activeGui = resolveGui();
+        if (mod == null || !mod.isEnabled() || activeGui == null) {
             return;
         }
         Player player = meta.getCaster().getData().getPlayer();
@@ -54,7 +106,7 @@ public class BiomeCompassAbility extends SkillHandler<SimpleSkillResult> {
                 bukkitSlot = meta.getCaster().getActionHand().toBukkit();
             }
             int slot = (bukkitSlot == EquipmentSlot.OFF_HAND) ? 40 : player.getInventory().getHeldItemSlot();
-            gui.open(player, bukkitSlot, slot);
+            activeGui.open(player, bukkitSlot, slot);
         }
     }
 }

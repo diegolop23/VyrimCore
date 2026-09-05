@@ -28,11 +28,13 @@ public final class VyrimCore extends JavaPlugin {
         this.luckPermsHook = new LuckPermsHook(this);
         this.moduleManager = new ModuleManager(this);
 
-        // Register core modules
-        moduleManager.register(new BiomeCompassModule(this, mmoItemsHook));
+        BiomeCompassModule biomeCompass = new BiomeCompassModule(this, mmoItemsHook);
+        moduleManager.register(biomeCompass);
 
-        // Enable all registered modules
-        moduleManager.enableAll();
+        // Register the skill immediately — MythicLib is guaranteed up, MMOItems isn't up yet, that's fine.
+        mmoItemsHook.registerSkill(biomeCompass.getOrCreateAbility());
+
+        moduleManager.enableAll(); // BiomeCompassModule.isAvailable() checks MMOItems -> false right now, module stays off, that's expected
 
         // Register commands
         PluginCommand vyrimcoreCmd = getCommand("vyrimcore");
