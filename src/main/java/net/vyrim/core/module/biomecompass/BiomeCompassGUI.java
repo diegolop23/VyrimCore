@@ -49,11 +49,13 @@ public class BiomeCompassGUI implements Listener {
     private static final int NAV_PREV_SLOT = 48;
     private static final int NAV_INFO_SLOT = 49;
     private static final int NAV_NEXT_SLOT = 50;
+    private static final int NAV_MODE_TOGGLE_SLOT = 51;
 
     private static final String ACTION_PREV_PAGE = "PREV_PAGE";
     private static final String ACTION_NEXT_PAGE = "NEXT_PAGE";
     private static final String ACTION_INFO = "INFO";
     public static final String ACTION_LOCKED_BIOME = "LOCKED_BIOME";
+    public static final String ACTION_TOGGLE_MODE = "TOGGLE_MODE";
 
     private static final Set<String> NETHER_FALLBACK = Set.of(
             "nether_wastes", "crimson_forest", "warped_forest", "soul_sand_valley", "basalt_deltas"
@@ -172,7 +174,7 @@ public class BiomeCompassGUI implements Listener {
             inventory.setItem(contentIndexToSlot(i), createBiomeIcon(biome, envName, locked));
         }
 
-        renderNavigationControls(inventory, clampedPage, totalPages, biomes.size());
+        renderNavigationControls(inventory, clampedPage, totalPages, biomes.size(), player);
         player.openInventory(inventory);
     }
 
@@ -348,6 +350,10 @@ public class BiomeCompassGUI implements Listener {
     }
 
     private void renderNavigationControls(Inventory inventory, int page, int totalPages, int totalBiomes) {
+        renderNavigationControls(inventory, page, totalPages, totalBiomes, null);
+    }
+
+    private void renderNavigationControls(Inventory inventory, int page, int totalPages, int totalBiomes, Player player) {
         ItemStack filler = createFillerItem();
 
         // Full border: top row, bottom row, and side columns on the middle rows
@@ -402,6 +408,50 @@ public class BiomeCompassGUI implements Listener {
         } else {
             inventory.setItem(NAV_NEXT_SLOT, filler);
         }
+
+        // Mode Toggle Button (Slot 51)
+        if (player != null) {
+            inventory.setItem(NAV_MODE_TOGGLE_SLOT, createModeToggleItem(player));
+        } else {
+            inventory.setItem(NAV_MODE_TOGGLE_SLOT, filler);
+        }
+    }
+
+    public ItemStack createModeToggleItem(Player player) {
+        boolean ignoreCurrentBiome = (module != null && player != null) && module.isIgnoreCurrentBiomeMode(player.getUniqueId());
+        Material material = ignoreCurrentBiome ? Material.RECOVERY_COMPASS : Material.COMPASS;
+        ItemStack item = createItemStack(material);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            String nameStr = getModeName(ignoreCurrentBiome);
+            String loreStr = getModeLore(ignoreCurrentBiome);
+            meta.displayName(BiomeLocatorService.parseMessage(nameStr).decoration(TextDecoration.ITALIC, false));
+
+            List<Component> lore = new ArrayList<>();
+            if (loreStr != null && !loreStr.isEmpty()) {
+                for (String line : loreStr.split("\n")) {
+                    lore.add(BiomeLocatorService.parseMessage(line).decoration(TextDecoration.ITALIC, false));
+                }
+            }
+            meta.lore(lore);
+            meta.getPersistentDataContainer().set(pdcActionKey, PersistentDataType.STRING, ACTION_TOGGLE_MODE);
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    private String getModeName(boolean ignoreCurrentBiome) {
+        if (module != null) {
+            return ignoreCurrentBiome ? module.getModeIgnoreName() : module.getModeNearestName();
+        }
+        return ignoreCurrentBiome ? BiomeCompassModule.DEFAULT_MODE_IGNORE_NAME : BiomeCompassModule.DEFAULT_MODE_NEAREST_NAME;
+    }
+
+    private String getModeLore(boolean ignoreCurrentBiome) {
+        if (module != null) {
+            return ignoreCurrentBiome ? module.getModeIgnoreLore() : module.getModeNearestLore();
+        }
+        return ignoreCurrentBiome ? BiomeCompassModule.DEFAULT_MODE_IGNORE_LORE : BiomeCompassModule.DEFAULT_MODE_NEAREST_LORE;
     }
 
     /** Maps a content index (0..PAGE_SIZE-1) to its actual inventory slot inside the bordered grid. */
@@ -491,12 +541,12 @@ public class BiomeCompassGUI implements Listener {
         // Check navigation actions
         String action = pdc.get(pdcActionKey, PersistentDataType.STRING);
         if (ACTION_PREV_PAGE.equals(action)) {
-            player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 0.7f, 1.0f);
+            playClickSound(player);
             openPage(player, holder.getCurrentPage() - 1, holder.getHand(), holder.getInventorySlot(), holder.getTier());
             return;
         }
         if (ACTION_NEXT_PAGE.equals(action)) {
-            player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 0.7f, 1.0f);
+            playClickSound(player);
             openPage(player, holder.getCurrentPage() + 1, holder.getHand(), holder.getInventorySlot(), holder.getTier());
             return;
         }
@@ -505,6 +555,17 @@ public class BiomeCompassGUI implements Listener {
             if (playSounds) {
                 playDenialSound(player);
             }
+            return;
+        }
+        if (ACTION_TOGGLE_MODE.equals(action)) {
+            if (module != null) {
+                module.toggleIgnoreCurrentBiomeMode(player.getUniqueId());
+            }
+            boolean playSounds = (locatorService != null) ? locatorService.isPlaySounds() : (module == null || module.isPlaySounds());
+            if (playSounds) {
+                playClickSound(player);
+            }
+            openPage(player, holder.getCurrentPage(), holder.getHand(), holder.getInventorySlot(), holder.getTier());
             return;
         }
         if (ACTION_INFO.equals(action)) {
@@ -549,7 +610,17 @@ public class BiomeCompassGUI implements Listener {
             }
 
             player.closeInventory();
-            locatorService.locateBiome(player, biome, biomeKey, holder.getHand(), holder.getInventorySlot());
+            boolean ignoreCurrentBiome = module != null && module.isIgnoreCurrentBiomeMode(player.getUniqueId());
+            locatorService.locateBiome(player, biome, biomeKey, holder.getHand(), holder.getInventorySlot(), ignoreCurrentBiome);
+        }
+    }
+
+    void playClickSound(Player player) {
+        if (player != null) {
+            try {
+                player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 0.7f, 1.0f);
+            } catch (Throwable ignored) {
+            }
         }
     }
 

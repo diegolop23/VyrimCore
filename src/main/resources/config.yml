@@ -28,6 +28,9 @@ modules:
     show_locked_biomes: true   # if false, locked biomes are omitted from the GUI entirely
     locked_biome_lore: "&c🔒 Requires a higher-tier Nature Compass"
 
+    same_biome_min_distance: 150   # blocks; ring-probe search radius / discard threshold
+    same_biome_probe_count: 8      # number of directional probes around the player
+
     # Configurable module messages (supports MiniMessage and legacy color codes)
     messages:
       cooldown: "<red>You must wait <yellow>%seconds%s</yellow> before scanning again!</red>"
@@ -36,4 +39,8 @@ modules:
       not_found: "<red>No %biome% found within range.</red>"
       too_close_to_border: "<red>Cannot search: You are too close to the world border!</red>"
       outside_border: "<red>Closest %biome% is outside the world border.</red>"
+      mode_nearest_name: "&aMode: Nearest"
+      mode_nearest_lore: "&7Always returns the closest match,\n&7even the patch you're standing in."
+      mode_ignore_name: "&6Mode: Ignore Current Biome"
+      mode_ignore_lore: "&7Skips the patch you're standing in\n&7and searches for the next-nearest one."
 

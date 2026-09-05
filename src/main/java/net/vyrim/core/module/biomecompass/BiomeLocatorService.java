@@ -107,6 +107,20 @@ public class BiomeLocatorService {
         return core.getConfig().getBoolean("modules.biome_compass.play_sounds", true);
     }
 
+    public int getSameBiomeMinDistance() {
+        if (core == null || core.getConfig() == null) {
+            return 150;
+        }
+        return Math.max(0, core.getConfig().getInt("modules.biome_compass.same_biome_min_distance", 150));
+    }
+
+    public int getSameBiomeProbeCount() {
+        if (core == null || core.getConfig() == null) {
+            return 8;
+        }
+        return Math.max(1, core.getConfig().getInt("modules.biome_compass.same_biome_probe_count", 8));
+    }
+
     /**
      * Parses formatted component supporting both MiniMessage tags (<color>) and legacy codes (&c).
      */
@@ -168,13 +182,21 @@ public class BiomeLocatorService {
      * Dispatches an asynchronous biome location search.
      */
     public void locateBiome(Player player, Biome biome, NamespacedKey biomeKey) {
-        locateBiome(player, biome, biomeKey, EquipmentSlot.HAND, player.getInventory().getHeldItemSlot());
+        locateBiome(player, biome, biomeKey, EquipmentSlot.HAND, player.getInventory().getHeldItemSlot(), false);
     }
 
     /**
      * Dispatches an asynchronous biome location search for a specific item hand and slot.
      */
     public void locateBiome(Player player, Biome biome, NamespacedKey biomeKey, EquipmentSlot hand, int slot) {
+        locateBiome(player, biome, biomeKey, hand, slot, false);
+    }
+
+    /**
+     * Dispatches an asynchronous biome location search for a specific item hand and slot,
+     * optionally ignoring the player's currently standing biome patch.
+     */
+    public void locateBiome(Player player, Biome biome, NamespacedKey biomeKey, EquipmentSlot hand, int slot, boolean ignoreCurrentBiome) {
         UUID playerUuid = player.getUniqueId();
         Location playerLoc = player.getLocation().clone();
         World world = playerLoc.getWorld();
@@ -215,9 +237,49 @@ public class BiomeLocatorService {
             player.playSound(playerLoc, Sound.UI_BUTTON_CLICK, 0.7f, 1.2f);
         }
 
+        boolean currentlyInTargetBiome = false;
+        if (ignoreCurrentBiome && biome != null && world != null) {
+            try {
+                currentlyInTargetBiome = (playerLoc.getBlock().getBiome() == biome);
+            } catch (Throwable ignored) {
+            }
+        }
+
+        final boolean probeSearch = ignoreCurrentBiome && currentlyInTargetBiome;
         CompletableFuture<BiomeSearchResult> future = CompletableFuture.supplyAsync(() -> {
             if (world == null) return null;
-            return world.locateNearestBiome(playerLoc, searchRadius, 32, 64, biome);
+            if (probeSearch) {
+                int minDistance = getSameBiomeMinDistance();
+                int probeCount = getSameBiomeProbeCount();
+                int probeRadius = searchRadius - minDistance;
+                if (probeRadius <= 0) {
+                    return null;
+                }
+                List<BiomeSearchResult> candidates = new ArrayList<>();
+                for (int i = 0; i < probeCount; i++) {
+                    double angleDegrees = i * (360.0 / probeCount);
+                    double angleRad = Math.toRadians(angleDegrees);
+                    double probeX = playerLoc.getX() + minDistance * Math.cos(angleRad);
+                    double probeZ = playerLoc.getZ() + minDistance * Math.sin(angleRad);
+                    double probeY = playerLoc.getY();
+                    try {
+                        probeY = Math.max(world.getMinHeight() + 1, Math.min(world.getMaxHeight() - 1, probeY));
+                    } catch (Throwable ignored) {
+                    }
+                    Location probeOrigin = new Location(world, probeX, probeY, probeZ);
+                    try {
+                        BiomeSearchResult result = world.locateNearestBiome(probeOrigin, probeRadius, 32, 64, biome);
+                        if (result != null) {
+                            candidates.add(result);
+                        }
+                    } catch (Throwable t) {
+                        // ignore probe search error
+                    }
+                }
+                return selectBestCandidate(playerLoc, candidates, minDistance);
+            } else {
+                return world.locateNearestBiome(playerLoc, searchRadius, 32, 64, biome);
+            }
         });
 
         activeFutures.add(future);
@@ -237,6 +299,42 @@ public class BiomeLocatorService {
                 handleSearchResult(playerUuid, biomeKey, friendlyName, playerLoc, result, searchRadius, marker, hand, slot);
             });
         });
+    }
+
+    /**
+     * Filters candidate BiomeSearchResults and selects the one with the smallest distance
+     * to the player that is at least minDistance away.
+     *
+     * @param playerLoc   the player's reference location
+     * @param candidates  the list of candidates returned by directional probes
+     * @param minDistance the minimum distance threshold to be considered valid
+     * @return the closest candidate with distance &gt;= minDistance, or null if none qualify
+     */
+    public static BiomeSearchResult selectBestCandidate(Location playerLoc, List<BiomeSearchResult> candidates, double minDistance) {
+        if (playerLoc == null || candidates == null || candidates.isEmpty()) {
+            return null;
+        }
+        BiomeSearchResult best = null;
+        double bestDist = Double.MAX_VALUE;
+
+        for (BiomeSearchResult candidate : candidates) {
+            if (candidate == null || candidate.getLocation() == null) {
+                continue;
+            }
+            Location loc = candidate.getLocation();
+            if (loc.getWorld() == null && playerLoc.getWorld() != null) {
+                loc = loc.clone();
+                loc.setWorld(playerLoc.getWorld());
+            } else if (loc.getWorld() != null && playerLoc.getWorld() != null && !loc.getWorld().equals(playerLoc.getWorld())) {
+                continue;
+            }
+            double dist = playerLoc.distance(loc);
+            if (dist >= minDistance && dist < bestDist) {
+                bestDist = dist;
+                best = candidate;
+            }
+        }
+        return best;
     }
 
     void handleSearchResult(UUID playerUuid, NamespacedKey biomeKey, String friendlyName,
