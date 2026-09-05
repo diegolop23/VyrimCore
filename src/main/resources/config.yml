@@ -18,3 +18,6 @@ modules:
       scanning: "<gray>Locating closest <aqua>%biome%</aqua>...</gray>"
       found: "<green>Compass tuned to <aqua>%biome%</aqua> (~%distance%m away)!</green>"
       not_found: "<red>No %biome% found within range.</red>"
+      too_close_to_border: "<red>Cannot search: You are too close to the world border!</red>"
+      outside_border: "<red>Closest %biome% is outside the world border.</red>"
+

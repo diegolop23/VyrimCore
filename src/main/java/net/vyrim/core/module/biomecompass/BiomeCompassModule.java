@@ -34,6 +34,8 @@ public class BiomeCompassModule implements Module {
     private String messageScanning = "<gray>Locating closest <aqua>%biome%</aqua>...</gray>";
     private String messageFound = "<green>Compass tuned to <aqua>%biome%</aqua> (~%distance%m away)!</green>";
     private String messageNotFound = "<red>No %biome% found within range.</red>";
+    private String messageTooCloseToBorder = "<red>Cannot search: You are too close to the world border!</red>";
+    private String messageOutsideBorder = "<red>Closest %biome% is outside the world border.</red>";
 
     public BiomeCompassModule(VyrimCore core, MMOItemsHook mmoItemsHook) {
         this.core = core;
@@ -214,6 +216,8 @@ public class BiomeCompassModule implements Module {
             this.messageScanning = "<gray>Locating closest <aqua>%biome%</aqua>...</gray>";
             this.messageFound = "<green>Compass tuned to <aqua>%biome%</aqua> (~%distance%m away)!</green>";
             this.messageNotFound = "<red>No %biome% found within range.</red>";
+            this.messageTooCloseToBorder = "<red>Cannot search: You are too close to the world border!</red>";
+            this.messageOutsideBorder = "<red>Closest %biome% is outside the world border.</red>";
             return;
         }
 
@@ -234,6 +238,10 @@ public class BiomeCompassModule implements Module {
                 "<green>Compass tuned to <aqua>%biome%</aqua> (~%distance%m away)!</green>");
         this.messageNotFound = config.getString("modules.biome_compass.messages.not_found",
                 "<red>No %biome% found within range.</red>");
+        this.messageTooCloseToBorder = config.getString("modules.biome_compass.messages.too_close_to_border",
+                "<red>Cannot search: You are too close to the world border!</red>");
+        this.messageOutsideBorder = config.getString("modules.biome_compass.messages.outside_border",
+                "<red>Closest %biome% is outside the world border.</red>");
     }
 
     /**
@@ -281,6 +289,14 @@ public class BiomeCompassModule implements Module {
 
     public String getNotFoundMessageTemplate() {
         return messageNotFound;
+    }
+
+    public String getTooCloseToBorderMessageTemplate() {
+        return messageTooCloseToBorder;
+    }
+
+    public String getOutsideBorderMessageTemplate() {
+        return messageOutsideBorder;
     }
 
     /**

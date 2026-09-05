@@ -13,6 +13,7 @@ import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Sound;
 import org.bukkit.World;
+import org.bukkit.WorldBorder;
 import org.bukkit.block.Biome;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.EquipmentSlot;
@@ -42,6 +43,12 @@ public class BiomeLocatorService {
     public static final String PDC_TARGET_WORLD_KEY_NAME = "compass_target_world";
     public static final String PDC_TARGET_DIST_KEY_NAME = "compass_target_dist";
 
+    public static final String DEFAULT_SCANNING_MESSAGE = "<gray>Locating closest <aqua>%biome%</aqua>...</gray>";
+    public static final String DEFAULT_FOUND_MESSAGE = "<green>Compass tuned to <aqua>%biome%</aqua> (~%distance%m away)!</green>";
+    public static final String DEFAULT_NOT_FOUND_MESSAGE = "<red>No %biome% found within range.</red>";
+    public static final String DEFAULT_TOO_CLOSE_TO_BORDER_MESSAGE = "<red>Cannot search: You are too close to the world border!</red>";
+    public static final String DEFAULT_OUTSIDE_BORDER_MESSAGE = "<red>Closest %biome% is outside the world border.</red>";
+
     private final VyrimCore core;
     private final NamespacedKey pdcTargetBiome;
     private final NamespacedKey pdcTargetX;
@@ -54,12 +61,22 @@ public class BiomeLocatorService {
 
     public BiomeLocatorService(VyrimCore core) {
         this.core = core;
-        this.pdcTargetBiome = new NamespacedKey(core, PDC_TARGET_BIOME_KEY_NAME);
-        this.pdcTargetX = new NamespacedKey(core, PDC_TARGET_X_KEY_NAME);
-        this.pdcTargetY = new NamespacedKey(core, PDC_TARGET_Y_KEY_NAME);
-        this.pdcTargetZ = new NamespacedKey(core, PDC_TARGET_Z_KEY_NAME);
-        this.pdcTargetWorld = new NamespacedKey(core, PDC_TARGET_WORLD_KEY_NAME);
-        this.pdcTargetDist = new NamespacedKey(core, PDC_TARGET_DIST_KEY_NAME);
+        this.pdcTargetBiome = createKey(PDC_TARGET_BIOME_KEY_NAME);
+        this.pdcTargetX = createKey(PDC_TARGET_X_KEY_NAME);
+        this.pdcTargetY = createKey(PDC_TARGET_Y_KEY_NAME);
+        this.pdcTargetZ = createKey(PDC_TARGET_Z_KEY_NAME);
+        this.pdcTargetWorld = createKey(PDC_TARGET_WORLD_KEY_NAME);
+        this.pdcTargetDist = createKey(PDC_TARGET_DIST_KEY_NAME);
+    }
+
+    private NamespacedKey createKey(String key) {
+        try {
+            if (core != null && core.getName() != null) {
+                return new NamespacedKey(core, key);
+            }
+        } catch (Throwable ignored) {
+        }
+        return NamespacedKey.fromString("vyrimcore:" + key);
     }
 
     public int getSearchRadius() {
@@ -94,6 +111,46 @@ public class BiomeLocatorService {
         }
     }
 
+    private String getMessage(String key, String def) {
+        if (core == null || core.getConfig() == null) {
+            return def;
+        }
+        String val = core.getConfig().getString("modules.biome_compass.messages." + key, def);
+        return val != null ? val : def;
+    }
+
+    /**
+     * Clamps the search radius so that a square search area of side 2 * radius centered on origin
+     * remains entirely within the world border.
+     */
+    private int clampRadiusToBorder(Location origin, int desiredRadius) {
+        if (origin == null || origin.getWorld() == null) {
+            return desiredRadius;
+        }
+        WorldBorder border = origin.getWorld().getWorldBorder();
+        if (border == null) {
+            return desiredRadius;
+        }
+
+        Location center = border.getCenter();
+        double size = border.getSize();
+        double halfSize = size / 2.0;
+
+        double minX = center.getX() - halfSize;
+        double maxX = center.getX() + halfSize;
+        double minZ = center.getZ() - halfSize;
+        double maxZ = center.getZ() + halfSize;
+
+        double distWest = origin.getX() - minX;
+        double distEast = maxX - origin.getX();
+        double distNorth = origin.getZ() - minZ;
+        double distSouth = maxZ - origin.getZ();
+
+        double minDist = Math.min(Math.min(distWest, distEast), Math.min(distNorth, distSouth));
+        int allowableRadius = (int) Math.floor(minDist);
+        return Math.min(desiredRadius, allowableRadius);
+    }
+
     /**
      * Dispatches an asynchronous biome location search.
      */
@@ -108,12 +165,20 @@ public class BiomeLocatorService {
         UUID playerUuid = player.getUniqueId();
         Location playerLoc = player.getLocation().clone();
         World world = playerLoc.getWorld();
-        int searchRadius = getSearchRadius();
+        int desiredRadius = getSearchRadius();
+        int searchRadius = clampRadiusToBorder(playerLoc, desiredRadius);
         String friendlyName = formatBiomeName(biomeKey);
 
-        String scanningTemplate = core != null && core.getConfig() != null
-                ? core.getConfig().getString("modules.biome_compass.messages.scanning", "<gray>Locating closest <aqua>%biome%</aqua>...</gray>")
-                : "<gray>Locating closest <aqua>%biome%</aqua>...</gray>";
+        if (searchRadius <= 0) {
+            String tooCloseTemplate = getMessage("too_close_to_border", DEFAULT_TOO_CLOSE_TO_BORDER_MESSAGE);
+            player.sendMessage(parseMessage(tooCloseTemplate.replace("%biome%", friendlyName)));
+            if (isPlaySounds()) {
+                player.playSound(playerLoc, Sound.BLOCK_NOTE_BLOCK_BASS, 1.0f, 0.5f);
+            }
+            return;
+        }
+
+        String scanningTemplate = getMessage("scanning", DEFAULT_SCANNING_MESSAGE);
         player.sendMessage(parseMessage(scanningTemplate.replace("%biome%", friendlyName)));
 
         if (isPlaySounds()) {
@@ -153,9 +218,7 @@ public class BiomeLocatorService {
         }
 
         if (searchResult == null || searchResult.getLocation() == null) {
-            String notFoundTemplate = core != null && core.getConfig() != null
-                    ? core.getConfig().getString("modules.biome_compass.messages.not_found", "<red>No %biome% found within range.</red>")
-                    : "<red>No %biome% found within range.</red>";
+            String notFoundTemplate = getMessage("not_found", DEFAULT_NOT_FOUND_MESSAGE);
             player.sendMessage(parseMessage(notFoundTemplate.replace("%biome%", friendlyName)));
 
             if (isPlaySounds()) {
@@ -167,6 +230,24 @@ public class BiomeLocatorService {
         Location target = searchResult.getLocation().clone();
         if (target.getWorld() == null && playerLoc.getWorld() != null) {
             target.setWorld(playerLoc.getWorld());
+        }
+
+        World targetWorld = target.getWorld();
+        if (targetWorld != null && targetWorld.getWorldBorder() != null && !targetWorld.getWorldBorder().isInside(target)) {
+            String outsideBorderTemplate = getMessage("outside_border", DEFAULT_OUTSIDE_BORDER_MESSAGE);
+            double distance = playerLoc.distance(target);
+            long blockDist = Math.round(distance);
+            String formatted = outsideBorderTemplate
+                    .replace("%biome%", friendlyName)
+                    .replace("%distance%", String.format("%,d", blockDist))
+                    .replace("%x%", String.valueOf(target.getBlockX()))
+                    .replace("%z%", String.valueOf(target.getBlockZ()));
+            player.sendMessage(parseMessage(formatted));
+
+            if (isPlaySounds()) {
+                player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1.0f, 0.5f);
+            }
+            return;
         }
 
         ItemStack compass = findTargetItem(player, hand, slot);
@@ -213,9 +294,7 @@ public class BiomeLocatorService {
             player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.7f, 1.4f);
         }
 
-        String foundTemplate = core != null && core.getConfig() != null
-                ? core.getConfig().getString("modules.biome_compass.messages.found", "<green>Compass tuned to <aqua>%biome%</aqua> (~%distance%m away)!</green>")
-                : "<green>Compass tuned to <aqua>%biome%</aqua> (~%distance%m away)!</green>";
+        String foundTemplate = getMessage("found", DEFAULT_FOUND_MESSAGE);
         String formattedFound = foundTemplate
                 .replace("%biome%", friendlyName)
                 .replace("%distance%", String.format("%,d", blockDist))
@@ -223,6 +302,7 @@ public class BiomeLocatorService {
                 .replace("%z%", String.valueOf(target.getBlockZ()));
         player.sendMessage(parseMessage(formattedFound));
     }
+
 
     public static void updateCompassLore(CompassMeta meta, String friendlyName, Location target, long distance) {
         List<Component> currentLore = meta.lore();
