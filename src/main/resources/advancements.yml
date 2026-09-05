@@ -1,0 +1,274 @@
+# ==============================================================================
+# VyrimCore Advancements Configuration
+# ==============================================================================
+#
+# Overview:
+# This file defines custom advancement tabs, advancement trees, criteria triggers,
+# and unlock rewards for VyrimCore.
+#
+# Concepts:
+# 1. Tabs & Backgrounds:
+#    - Each top-level entry under 'tabs:' defines an advancement tab shown in the
+#      vanilla Minecraft advancement screen (default keybind: 'L').
+#    - Each tab has a unique tab ID (e.g. 'story', 'main', 'professions').
+#    - Each tab MUST contain exactly one root advancement (parent omitted or null).
+#    - Optional tab properties:
+#        background: Resource location string for the tab background texture.
+#          - Vanilla example: background: "textures/block/stone.png"
+#          - Custom resource pack example: background: "vyrim:textures/gui/advancements/backgrounds/stone.png"
+#          - Default: "textures/block/stone.png"
+#        icon: Tab-level icon applied to the root advancement (optional).
+#          - Vanilla Material: icon: NETHER_STAR
+#          - Custom namespaced: icon: "vyrim:advancement/dragon_head"
+#        icon_fallback: Tab-level fallback Material for players without resource pack.
+#          - Example: icon_fallback: DRAGON_HEAD (default: PAPER)
+#
+# 2. Icons & Custom Model Textures:
+#    - Every advancement (and tab root) specifies an 'icon:'.
+#    - Supported formats:
+#        a) Plain Bukkit Material enum name:
+#             icon: DIAMOND_SWORD
+#             icon: GRASS_BLOCK
+#        b) Custom namespaced item model reference in "namespace:path" format:
+#             icon: "vyrim:advancement/dragon_slayer"
+#             icon: "minecraft:custom_thing"
+#           This sets the 'minecraft:item_model' component on the resulting ItemStack,
+#           which maps to your active resource pack (assets/<namespace>/models/... and .png).
+#           NOTE: The JSON model and .png textures must exist in a resource pack enforced
+#           by the server or installed by players.
+#    - 'icon_fallback':
+#        Optional plain Bukkit Material enum name used as the base item for custom models.
+#        For players who do NOT have the resource pack loaded, the item renders with this
+#        vanilla material appearance instead of looking broken.
+#        If omitted, defaults to neutral 'PAPER'.
+#        Example: icon_fallback: DRAGON_HEAD
+#
+# 3. Parent-Child Trees & Grid Coordinates (Manual vs Auto-Layout):
+#    - Advancements are linked via their 'parent' attribute.
+#    - Root advancements have NO parent (or parent: null).
+#    - Child advancements specify their parent's ID.
+#    - Coordinates ('x' and 'y'):
+#        - Both fields are OPTIONAL floats (using internal UltimateAdvancementAPI grid units).
+#        - Negative values are valid and fully supported (e.g. x: -2.5, y: -1.0).
+#        - Omit both 'x' and 'y': Auto-computes coordinates (depth -> y, sibling span -> x)
+#          strictly preventing subtree overlaps.
+#        - Set both 'x' and 'y': Manually places the node at the specified grid position verbatim.
+#        - If either 'x' or 'y' is omitted, the node falls back to auto-layout.
+#        - Mixing manual and auto nodes in the same tab is fully supported! Auto-layout
+#          accounts for manual siblings so auto-placed nodes do not overlap manual ones.
+#        - If a computed auto coordinate collides with a manual coordinate in the same tab,
+#          a warning is logged in the server console (the admin is expected to adjust).
+#        - If ALL advancements in a tab specify manual x and y, auto-layout is skipped entirely.
+#
+# 4. Trigger Types & Behavior:
+#    - All advancements are ONE-TIME-ONLY: once unlocked for a player, they will
+#      never re-trigger, re-progress, or re-grant rewards.
+#    - 'amount' specifies the threshold required to complete the trigger.
+#      It defaults to 1 when omitted (meaning "the first time this condition is met").
+#
+# Supported Triggers:
+# ------------------------------------------------------------------------------
+# | Type            | Target Format                | Amount Meaning            | Status   |
+# |-----------------|------------------------------|---------------------------|----------|
+# | JOIN_SERVER     | None (omit or set to none)   | 1 = first / any join      | Phase 2  |
+# | DISCOVER_BIOME  | Bukkit Biome enum name       | 1 = biome discovered      | Phase 2  |
+# | KILL_ENTITY     | Bukkit EntityType enum name  | Number of kills required  | Phase 2  |
+# | BREAK_BLOCK     | Bukkit Material enum name    | Cumulative blocks broken  | Phase 2  |
+# | PLACE_BLOCK     | Bukkit Material enum name    | Cumulative blocks placed  | Phase 2  |
+# | CRAFT_ITEM      | Bukkit Material enum name    | Cumulative times crafted  | Phase 2  |
+# | CONSUME_ITEM    | Bukkit Material enum name    | Cumulative items eaten    | Phase 2  |
+# | PICKUP_ITEM     | Bukkit Material enum name    | Cumulative items collected| Phase 2  |
+# | STATISTIC       | Bukkit Statistic name        | Value threshold           | Phase 2  |
+# |                 | (optionally "STAT:QUALIFIER")|                           |          |
+# | MMOITEM_CRAFT   | "TYPE:ID" (e.g. SWORD:EXCAL) | Cumulative MMOItems craft | Phase 3  |
+# | MMOITEM_PICKUP  | "TYPE:ID" (e.g. SWORD:EXCAL) | Cumulative MMOItems pickup| Phase 3  |
+# | MMOITEM_CONSUME | "TYPE:ID" (e.g. POTION:HEAL) | Cumulative MMOItems eaten | Phase 3  |
+# ------------------------------------------------------------------------------
+#
+# 5. Rewards:
+#    - 'command': Console command dispatched when unlocked. Supports '%player%' placeholder.
+#    - 'permission': Permission node granted to the player via LuckPerms upon unlock.
+#    - Both 'command' and 'permission' are optional. You can specify either, both, or neither.
+#
+# Per-Advancement Field Reference:
+# ------------------------------------------------------------------------------
+# parent:        ID of the parent advancement (null or omitted for root)
+# title:         Display title (supports '&' color codes, e.g. "&6Master Miner")
+# description:   List of lore lines or single string (supports '&' color codes)
+# icon:          Bukkit Material enum (e.g. "STONE") OR custom model "namespace:path"
+# icon_fallback: Bukkit Material base item if custom model is missing (default: PAPER)
+# x:             Grid X float (optional, negative allowed; omit for auto-layout)
+# y:             Grid Y float (optional, negative allowed; omit for auto-layout)
+# frame:         Advancement frame style:
+#                  - "TASK" (rounded box, standard achievements)
+#                  - "GOAL" (pointed/square frame, major milestones)
+#                  - "CHALLENGE" (ornate frame with special sound, hard feats)
+# toast:         true / false (show popup banner in top-right when completed)
+# announce:      true / false (broadcast completion to public server chat)
+# trigger:
+#   type:        One of the trigger types documented above
+#   target:      Target material, entity, biome, or ID (omit if not applicable)
+#   amount:      Threshold count (default: 1)
+# reward:
+#   command:     Console command template with %player% placeholder (optional)
+#   permission:  Permission node granted via LuckPerms (optional)
+# ==============================================================================
+
+tabs:
+  main:
+    background: "textures/block/stone.png"
+    advancements:
+      # Root Advancement (no parent): Granted upon joining the server
+      root:
+        title: "&6Welcome to Vyrim"
+        description:
+          - "&7Begin your adventure in the"
+          - "&7world of Vyrim!"
+        icon: GRASS_BLOCK
+        frame: TASK
+        toast: true
+        announce: true
+        trigger:
+          type: JOIN_SERVER
+          amount: 1
+        reward:
+          command: "eco give %player% 100"
+          permission: "vyrim.advancement.welcome"
+
+      # Child Advancement: Mining 50 stone blocks (Auto-layout)
+      mining_stone:
+        parent: root
+        title: "&eStone Age Miner"
+        description:
+          - "&7Break 50 stone blocks to"
+          - "&7prove your resourcefulness."
+        icon: STONE
+        frame: TASK
+        toast: true
+        announce: false
+        trigger:
+          type: BREAK_BLOCK
+          target: STONE
+          amount: 50
+        reward:
+          command: "give %player% iron_pickaxe 1"
+          permission: "vyrim.advancement.miner"
+
+      # Phase 3 Example: Crafting a specific MMOItem
+      craft_excalibur:
+        parent: root
+        title: "&6Legendary Blacksmith"
+        description:
+          - "&7Forge the mythical blade"
+          - "&7known as Excalibur!"
+        icon: DIAMOND_SWORD
+        frame: CHALLENGE
+        toast: true
+        announce: true
+        trigger:
+          type: MMOITEM_CRAFT
+          target: "SWORD:EXCALIBUR"
+          amount: 1
+        reward:
+          command: "eco give %player% 500"
+          permission: "vyrim.advancement.excalibur"
+
+      # Phase 3 Example: Picking up 10 of a specific MMOItem
+      collect_rubies:
+        parent: mining_stone
+        title: "&cGem Collector"
+        description:
+          - "&7Collect 10 rare Ruby"
+          - "&7gemstones from your adventures."
+        icon: EMERALD
+        frame: GOAL
+        toast: true
+        announce: false
+        trigger:
+          type: MMOITEM_PICKUP
+          target: "GEM_STONE:RUBY"
+          amount: 10
+        reward:
+          command: "give %player% diamond 5"
+          permission: "vyrim.advancement.collector"
+
+      # Phase 3 Example: Consuming a specific MMOItem
+      drink_elixir:
+        parent: root
+        title: "&dAlchemical Mastery"
+        description:
+          - "&7Consume a Grand Healing Elixir"
+          - "&7to restore vitality."
+        icon: POTION
+        frame: TASK
+        toast: true
+        announce: false
+        trigger:
+          type: MMOITEM_CONSUME
+          target: "CONSUMABLE:GRAND_HEALING_ELIXIR"
+          amount: 1
+        reward:
+          command: "effect give %player% regeneration 30 1"
+          permission: "vyrim.advancement.alchemist"
+
+      # Phase 4 Feature 1 Example: Custom textured icon with fallback base item
+      slay_dragon:
+        parent: root
+        title: "&5Dragon Slayer"
+        description:
+          - "&7Vanquish the Ender Dragon and"
+          - "&7claim the mythical dragon crest."
+        icon: "vyrim:advancement/dragon_slayer"
+        icon_fallback: DRAGON_HEAD
+        frame: CHALLENGE
+        toast: true
+        announce: true
+        trigger:
+          type: KILL_ENTITY
+          target: ENDER_DRAGON
+          amount: 1
+        reward:
+          command: "eco give %player% 1000"
+          permission: "vyrim.advancement.dragonslayer"
+
+      # Phase 4 Feature 2 Example: Manually positioned tree branch with custom x and y
+      adventurer_branch:
+        parent: root
+        title: "&bTrailblazer"
+        description:
+          - "&7Venture out into the wilderness"
+          - "&7and discover untamed biomes."
+        icon: COMPASS
+        frame: GOAL
+        x: 4.5
+        y: 1.0
+        toast: true
+        announce: false
+        trigger:
+          type: DISCOVER_BIOME
+          target: PLAINS
+          amount: 1
+        reward:
+          command: "eco give %player% 50"
+
+      # Phase 4 Feature 1 & 2 Combined: Custom textured icon + manual position
+      deep_explorer:
+        parent: adventurer_branch
+        title: "&3Deep Delver"
+        description:
+          - "&7Descend into the ancient darkness"
+          - "&7of the Deep Dark biome."
+        icon: "vyrim:advancement/deep_compass"
+        icon_fallback: ECHO_SHARD
+        frame: CHALLENGE
+        x: 6.0
+        y: 2.0
+        toast: true
+        announce: true
+        trigger:
+          type: DISCOVER_BIOME
+          target: DEEP_DARK
+          amount: 1
+        reward:
+          command: "give %player% recovery_compass 1"
+          permission: "vyrim.advancement.deepdelver"

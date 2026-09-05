@@ -112,6 +112,31 @@ public class LuckPermsHook {
     }
 
     /**
+     * Grants a permission node to a player via LuckPerms.
+     *
+     * @param player     the player to grant permission to
+     * @param permission the permission node
+     * @return true if permission grant operation was dispatched successfully
+     */
+    public boolean grantPermission(Player player, String permission) {
+        if (player == null || permission == null || permission.isBlank()) {
+            return false;
+        }
+
+        if (isAvailable()) {
+            try {
+                return delegate.grantPermission(player, permission);
+            } catch (Throwable t) {
+                if (core != null && core.getLogger() != null) {
+                    core.getLogger().warning("[LuckPermsHook] Failed granting LuckPerms permission (" + permission
+                            + ") to " + player.getName() + ": " + t.getMessage());
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * Closes and clears references to the LuckPerms provider.
      */
     public void close() {
@@ -154,6 +179,18 @@ public class LuckPermsHook {
             }
 
             return player.hasPermission(permission);
+        }
+
+        public boolean grantPermission(Player player, String permission) {
+            try {
+                net.luckperms.api.node.Node node = net.luckperms.api.node.Node.builder(permission).build();
+                luckPerms.getUserManager().modifyUser(player.getUniqueId(), user -> {
+                    user.data().add(node);
+                });
+                return true;
+            } catch (Throwable t) {
+                return false;
+            }
         }
     }
 }

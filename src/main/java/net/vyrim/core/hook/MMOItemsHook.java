@@ -14,8 +14,10 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.server.PluginEnableEvent;
 import org.bukkit.event.server.ServerCommandEvent;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.PluginManager;
 
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
@@ -36,10 +38,21 @@ public class MMOItemsHook implements Listener {
         this.available = checkAvailability();
 
         // Register command and plugin reload listeners
-        Bukkit.getPluginManager().registerEvents(this, core);
+        PluginManager pm = getPluginManager();
+        if (pm != null) {
+            pm.registerEvents(this, core);
+        }
 
         // Register dedicated MMOItemsReloadEvent listener if MMOItems is present
         registerReloadListenerIfPossible();
+    }
+
+    private static PluginManager getPluginManager() {
+        try {
+            return Bukkit.getServer() != null ? Bukkit.getPluginManager() : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     /**
@@ -48,7 +61,8 @@ public class MMOItemsHook implements Listener {
      */
     public boolean isMythicLibAvailable() {
         try {
-            return Bukkit.getPluginManager() != null && Bukkit.getPluginManager().isPluginEnabled("MythicLib");
+            PluginManager pm = getPluginManager();
+            return pm != null && pm.isPluginEnabled("MythicLib");
         } catch (Throwable ignored) {
             return false;
         }
@@ -60,7 +74,8 @@ public class MMOItemsHook implements Listener {
      */
     public boolean isFullyAvailable() {
         try {
-            return isMythicLibAvailable() && Bukkit.getPluginManager().isPluginEnabled("MMOItems");
+            PluginManager pm = getPluginManager();
+            return isMythicLibAvailable() && pm != null && pm.isPluginEnabled("MMOItems");
         } catch (Throwable ignored) {
             return false;
         }
@@ -71,7 +86,7 @@ public class MMOItemsHook implements Listener {
      */
     public boolean isMMOItemsInstalled() {
         try {
-            PluginManager pm = Bukkit.getPluginManager();
+            PluginManager pm = getPluginManager();
             return pm != null && pm.getPlugin("MMOItems") != null;
         } catch (Throwable ignored) {
             return false;
@@ -84,7 +99,7 @@ public class MMOItemsHook implements Listener {
      */
     public boolean isMMOItemsPending() {
         try {
-            PluginManager pm = Bukkit.getPluginManager();
+            PluginManager pm = getPluginManager();
             return pm != null && pm.getPlugin("MMOItems") != null && !pm.isPluginEnabled("MMOItems");
         } catch (Throwable ignored) {
             return false;
@@ -198,10 +213,11 @@ public class MMOItemsHook implements Listener {
      * if MMOItems is not installed.
      */
     private void registerReloadListenerIfPossible() {
-        if (mmoItemsListener == null && Bukkit.getPluginManager().isPluginEnabled("MMOItems")) {
+        PluginManager pm = getPluginManager();
+        if (mmoItemsListener == null && pm != null && pm.isPluginEnabled("MMOItems")) {
             try {
                 this.mmoItemsListener = new MMOItemsReloadListener();
-                Bukkit.getPluginManager().registerEvents(mmoItemsListener, core);
+                pm.registerEvents(mmoItemsListener, core);
                 core.getLogger().info("[MMOItemsHook] Registered MMOItemsReloadEvent listener.");
             } catch (Throwable t) {
                 core.getLogger().warning("[MMOItemsHook] Could not register MMOItemsReloadListener: " + t.getMessage());
@@ -273,6 +289,29 @@ public class MMOItemsHook implements Listener {
     }
 
     /**
+     * Resolves an ItemStack to its MMOItems TYPE:ID identifier (e.g. "SWORD:EXCALIBUR").
+     *
+     * @param item the item stack to inspect
+     * @return the normalized uppercase "TYPE:ID" string, or null if not an MMOItem or if MMOItems is unavailable
+     */
+    public String resolveMMOItemId(ItemStack item) {
+        if (!isFullyAvailable() || item == null || isAir(item.getType())) {
+            return null;
+        }
+        return MMOItemsResolver.resolve(item);
+    }
+
+    /**
+     * Checks whether an ItemStack represents a custom MMOItem.
+     *
+     * @param item the item stack to check
+     * @return true if the item has valid MMOItems type and ID tags, false otherwise
+     */
+    public boolean isMMOItem(ItemStack item) {
+        return resolveMMOItemId(item) != null;
+    }
+
+    /**
      * Separate listener class for MMOItemsReloadEvent to prevent NoClassDefFoundError
      * when MMOItems is absent at server startup.
      */
@@ -282,5 +321,28 @@ public class MMOItemsHook implements Listener {
             core.getLogger().info("[MMOItemsHook] Detected MMOItemsReloadEvent. Re-registering abilities...");
             reRegisterAll();
         }
+    }
+
+    /**
+     * Isolated helper class to ensure classloader isolation for MMOItems classes.
+     * Only loaded at runtime when isFullyAvailable() returns true.
+     */
+    private static class MMOItemsResolver {
+        static String resolve(ItemStack item) {
+            try {
+                String type = net.Indyuce.mmoitems.MMOItems.getTypeName(item);
+                String id = net.Indyuce.mmoitems.MMOItems.getID(item);
+                if (type == null || type.isBlank() || id == null || id.isBlank()) {
+                    return null;
+                }
+                return type.trim().toUpperCase(Locale.ROOT) + ":" + id.trim().toUpperCase(Locale.ROOT);
+            } catch (Throwable t) {
+                return null;
+            }
+        }
+    }
+
+    private static boolean isAir(org.bukkit.Material material) {
+        return material == null || material == org.bukkit.Material.AIR || material == org.bukkit.Material.CAVE_AIR || material == org.bukkit.Material.VOID_AIR;
     }
 }

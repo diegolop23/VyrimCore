@@ -4,11 +4,12 @@ version: '${version}'
 main: net.vyrim.core.VyrimCore
 api-version: '1.21.11'
 
-softdepend: [LuckPerms, PlaceholderAPI, MythicLib]
+softdepend: [LuckPerms, PlaceholderAPI, MythicLib, UltimateAdvancementAPI]
 loadbefore: [MMOItems]
 
 commands:
   vyrimcore:
+    aliases: [vyrim]
     description: Core administrative management command
     permission: vyrimcore.admin.reload
     usage: /<command> reload [module]

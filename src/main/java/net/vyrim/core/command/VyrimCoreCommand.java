@@ -49,13 +49,35 @@ public class VyrimCoreCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        if (args.length == 0 || !args[0].equalsIgnoreCase("reload")) {
-            sender.sendMessage(Component.text("Usage: /" + label + " reload [all|<module>]", NamedTextColor.RED));
+        if (args.length == 0) {
+            sender.sendMessage(Component.text("Usage: /" + label + " reload [all|<module>] or /" + label + " <module> reload", NamedTextColor.RED));
             return true;
         }
 
         // Disk Refresh: Always refresh config from disk at the very beginning of reload routine
         core.reloadConfig();
+
+        // Check for: /vyrim <module> reload
+        if (args.length == 2 && args[1].equalsIgnoreCase("reload")) {
+            String targetModuleName = args[0];
+            Optional<Module> moduleOpt = core.getModuleManager().getModule(targetModuleName);
+            if (moduleOpt.isEmpty()) {
+                List<String> registeredNames = core.getModuleManager().getRegisteredModuleNames();
+                String available = registeredNames.isEmpty() ? "none" : String.join(", ", registeredNames);
+                sender.sendMessage(Component.text("❌ Unrecognized module: '" + targetModuleName + "'. Registered modules: " + available, NamedTextColor.RED));
+                return true;
+            }
+
+            Module targetModule = moduleOpt.get();
+            core.getModuleManager().reload(targetModule);
+            sender.sendMessage(Component.text("✔ Module '" + targetModule.name() + "' successfully reloaded.", NamedTextColor.GREEN));
+            return true;
+        }
+
+        if (!args[0].equalsIgnoreCase("reload")) {
+            sender.sendMessage(Component.text("Usage: /" + label + " reload [all|<module>] or /" + label + " <module> reload", NamedTextColor.RED));
+            return true;
+        }
 
         // /vyrimcore reload OR /vyrimcore reload all
         if (args.length == 1 || (args.length == 2 && args[1].equalsIgnoreCase("all"))) {
@@ -88,14 +110,23 @@ public class VyrimCoreCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length == 1) {
-            return StringUtil.copyPartialMatches(args[0], List.of("reload"), new ArrayList<>());
+            List<String> options = new ArrayList<>();
+            options.add("reload");
+            if (alias.equalsIgnoreCase("vyrim")) {
+                options.addAll(core.getModuleManager().getRegisteredModuleNames());
+            }
+            return StringUtil.copyPartialMatches(args[0], options, new ArrayList<>());
         }
 
-        if (args.length == 2 && args[0].equalsIgnoreCase("reload")) {
-            List<String> options = new ArrayList<>();
-            options.add("all");
-            options.addAll(core.getModuleManager().getRegisteredModuleNames());
-            return StringUtil.copyPartialMatches(args[1], options, new ArrayList<>());
+        if (args.length == 2) {
+            if (args[0].equalsIgnoreCase("reload")) {
+                List<String> options = new ArrayList<>();
+                options.add("all");
+                options.addAll(core.getModuleManager().getRegisteredModuleNames());
+                return StringUtil.copyPartialMatches(args[1], options, new ArrayList<>());
+            } else if (core.getModuleManager().getModule(args[0]).isPresent()) {
+                return StringUtil.copyPartialMatches(args[1], List.of("reload"), new ArrayList<>());
+            }
         }
 
         return Collections.emptyList();

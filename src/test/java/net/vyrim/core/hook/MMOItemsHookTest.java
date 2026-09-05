@@ -62,4 +62,36 @@ class MMOItemsHookTest {
 
         assertFalse(ability.getResult(mock(io.lumine.mythic.lib.skill.SkillMetadata.class)).isSuccessful());
     }
+
+    @Test
+    @DisplayName("MMOItemsHook: resolveMMOItemId returns null when item is null or air")
+    void testResolveMMOItemIdNullOrAir() {
+        net.vyrim.core.VyrimCore mockCore = mock(net.vyrim.core.VyrimCore.class);
+        when(mockCore.getLogger()).thenReturn(java.util.logging.Logger.getLogger("MMOItemsHookTest"));
+        MMOItemsHook hook = spy(new MMOItemsHook(mockCore));
+        doReturn(true).when(hook).isFullyAvailable();
+
+        assertNull(hook.resolveMMOItemId(null));
+        assertFalse(hook.isMMOItem(null));
+
+        org.bukkit.inventory.ItemStack airItem = mock(org.bukkit.inventory.ItemStack.class);
+        when(airItem.getType()).thenReturn(org.bukkit.Material.AIR);
+        assertNull(hook.resolveMMOItemId(airItem));
+        assertFalse(hook.isMMOItem(airItem));
+    }
+
+    @Test
+    @DisplayName("MMOItemsHook: resolveMMOItemId returns null when MMOItems is unavailable")
+    void testResolveMMOItemIdWhenUnavailable() {
+        net.vyrim.core.VyrimCore mockCore = mock(net.vyrim.core.VyrimCore.class);
+        when(mockCore.getLogger()).thenReturn(java.util.logging.Logger.getLogger("MMOItemsHookTest"));
+        MMOItemsHook hook = spy(new MMOItemsHook(mockCore));
+        doReturn(false).when(hook).isFullyAvailable();
+
+        org.bukkit.inventory.ItemStack item = mock(org.bukkit.inventory.ItemStack.class);
+        when(item.getType()).thenReturn(org.bukkit.Material.DIAMOND_SWORD);
+
+        assertNull(hook.resolveMMOItemId(item));
+        assertFalse(hook.isMMOItem(item));
+    }
 }
