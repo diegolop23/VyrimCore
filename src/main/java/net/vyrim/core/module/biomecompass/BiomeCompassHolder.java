@@ -17,21 +17,32 @@ public class BiomeCompassHolder implements InventoryHolder {
     private final World.Environment environment;
     private final org.bukkit.inventory.EquipmentSlot hand;
     private final int inventorySlot;
+    private final int tier;
     private int currentPage;
     private int totalPages;
     private Inventory inventory;
 
     public BiomeCompassHolder(UUID playerUuid, World.Environment environment, int currentPage) {
-        this(playerUuid, environment, currentPage, org.bukkit.inventory.EquipmentSlot.HAND, -1);
+        this(playerUuid, environment, currentPage, org.bukkit.inventory.EquipmentSlot.HAND, -1, 1);
     }
 
     public BiomeCompassHolder(UUID playerUuid, World.Environment environment, int currentPage,
                               org.bukkit.inventory.EquipmentSlot hand, int inventorySlot) {
+        this(playerUuid, environment, currentPage, hand, inventorySlot, 1);
+    }
+
+    public BiomeCompassHolder(UUID playerUuid, World.Environment environment, int currentPage,
+                              org.bukkit.inventory.EquipmentSlot hand, int inventorySlot, int tier) {
         this.playerUuid = playerUuid;
         this.environment = environment;
         this.currentPage = currentPage;
         this.hand = hand;
         this.inventorySlot = inventorySlot;
+        this.tier = tier;
+    }
+
+    public int getTier() {
+        return tier;
     }
 
     public org.bukkit.inventory.EquipmentSlot getHand() {

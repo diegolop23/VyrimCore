@@ -19,6 +19,7 @@ public class BiomeCompassModule implements Module {
     private final VyrimCore core;
     private final MMOItemsHook mmoItemsHook;
     private final java.util.Map<java.util.UUID, Long> lastSearchTimes = new java.util.concurrent.ConcurrentHashMap<>();
+    private final BiomeTierResolver tierResolver = new BiomeTierResolver();
 
     private boolean enabled;
     private BiomeLocatorService locatorService;
@@ -219,10 +220,12 @@ public class BiomeCompassModule implements Module {
             this.messageNotFound = "<red>No %biome% found within range.</red>";
             this.messageTooCloseToBorder = "<red>Cannot search: You are too close to the world border!</red>";
             this.messageOutsideBorder = "<red>Closest %biome% is outside the world border.</red>";
+            this.tierResolver.loadConfiguration(null);
             return;
         }
 
         var config = core.getConfig();
+        this.tierResolver.loadConfiguration(config);
         this.cooldownSeconds = config.getInt("modules.biome_compass.cooldown", 30);
         if (config.contains("modules.biome_compass.radius")) {
             this.searchRadius = config.getInt("modules.biome_compass.radius", 6400);
@@ -274,6 +277,26 @@ public class BiomeCompassModule implements Module {
 
     public boolean isPlaySounds() {
         return playSounds;
+    }
+
+    public BiomeTierResolver getTierResolver() {
+        return tierResolver;
+    }
+
+    public int resolveItemTier(org.bukkit.inventory.ItemStack item) {
+        return tierResolver.resolveItemTier(item);
+    }
+
+    public int resolveBiomeTier(org.bukkit.NamespacedKey biomeKey) {
+        return tierResolver.resolveBiomeTier(biomeKey);
+    }
+
+    public boolean isShowLockedBiomes() {
+        return tierResolver.isShowLockedBiomes();
+    }
+
+    public String getLockedBiomeLore() {
+        return tierResolver.getLockedBiomeLore();
     }
 
     public String getCooldownMessageTemplate() {

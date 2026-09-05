@@ -53,6 +53,7 @@ public class BiomeCompassGUI implements Listener {
     private static final String ACTION_PREV_PAGE = "PREV_PAGE";
     private static final String ACTION_NEXT_PAGE = "NEXT_PAGE";
     private static final String ACTION_INFO = "INFO";
+    public static final String ACTION_LOCKED_BIOME = "LOCKED_BIOME";
 
     private static final Set<String> NETHER_FALLBACK = Set.of(
             "nether_wastes", "crimson_forest", "warped_forest", "soul_sand_valley", "basalt_deltas"
@@ -76,26 +77,49 @@ public class BiomeCompassGUI implements Listener {
         this.core = core;
         this.locatorService = locatorService;
         this.module = module;
-        this.pdcBiomeKey = new NamespacedKey(core, "gui_biome_key");
-        this.pdcActionKey = new NamespacedKey(core, "gui_action_key");
+        this.pdcBiomeKey = createKey("gui_biome_key");
+        this.pdcActionKey = createKey("gui_action_key");
+    }
+
+    private NamespacedKey createKey(String key) {
+        try {
+            if (core != null && core.getName() != null) {
+                return new NamespacedKey(core, key);
+            }
+        } catch (Throwable ignored) {
+        }
+        return NamespacedKey.fromString("vyrimcore:" + key);
+    }
+
+    ItemStack createItemStack(Material material) {
+        return new ItemStack(material);
     }
 
     public static Registry<Biome> getBiomeRegistry() {
         return RegistryAccess.registryAccess().getRegistry(RegistryKey.BIOME);
     }
 
+    public NamespacedKey getPdcBiomeKey() {
+        return pdcBiomeKey;
+    }
+
+    public NamespacedKey getPdcActionKey() {
+        return pdcActionKey;
+    }
+
     /**
      * Opens the biome selection GUI for the player at page 0 for main hand.
      */
     public void open(Player player) {
-        openPage(player, 0, EquipmentSlot.HAND, player.getInventory().getHeldItemSlot());
+        open(player, EquipmentSlot.HAND, player.getInventory().getHeldItemSlot());
     }
 
     /**
      * Opens the biome selection GUI for the player at page 0 for the specified hand and slot.
      */
     public void open(Player player, EquipmentSlot hand, int inventorySlot) {
-        openPage(player, 0, hand, inventorySlot);
+        int tier = resolvePlayerTier(player, hand, inventorySlot);
+        openPage(player, 0, hand, inventorySlot, tier);
     }
 
     /**
@@ -109,13 +133,26 @@ public class BiomeCompassGUI implements Listener {
      * Opens the biome selection GUI for the player at the given page for the specified hand and slot.
      */
     public void openPage(Player player, int page, EquipmentSlot hand, int inventorySlot) {
+        int tier = resolvePlayerTier(player, hand, inventorySlot);
+        openPage(player, page, hand, inventorySlot, tier);
+    }
+
+    /**
+     * Opens the biome selection GUI for the player at the given page with an explicitly resolved tier.
+     */
+    public void openPage(Player player, int page, EquipmentSlot hand, int inventorySlot, int tier) {
         World.Environment environment = player.getWorld().getEnvironment();
         List<Biome> biomes = getBiomesForEnvironment(environment);
+
+        boolean showLocked = module == null || module.isShowLockedBiomes();
+        if (!showLocked) {
+            biomes.removeIf(b -> resolveBiomeTier(b.getKey()) > tier);
+        }
 
         int totalPages = Math.max(1, (int) Math.ceil((double) biomes.size() / PAGE_SIZE));
         int clampedPage = Math.max(0, Math.min(page, totalPages - 1));
 
-        BiomeCompassHolder holder = new BiomeCompassHolder(player.getUniqueId(), environment, clampedPage, hand, inventorySlot);
+        BiomeCompassHolder holder = new BiomeCompassHolder(player.getUniqueId(), environment, clampedPage, hand, inventorySlot, tier);
         holder.setTotalPages(totalPages);
 
         Component title = Component.text("Biome Selector (Page " + (clampedPage + 1) + "/" + totalPages + ")",
@@ -131,11 +168,43 @@ public class BiomeCompassGUI implements Listener {
 
         for (int i = 0; i < pageBiomes.size(); i++) {
             Biome biome = pageBiomes.get(i);
-            inventory.setItem(contentIndexToSlot(i), createBiomeIcon(biome, envName));
+            boolean locked = resolveBiomeTier(biome.getKey()) > tier;
+            inventory.setItem(contentIndexToSlot(i), createBiomeIcon(biome, envName, locked));
         }
 
         renderNavigationControls(inventory, clampedPage, totalPages, biomes.size());
         player.openInventory(inventory);
+    }
+
+    public ItemStack resolveItem(Player player, EquipmentSlot hand, int slot) {
+        if (player == null) {
+            return null;
+        }
+        if (locatorService != null) {
+            ItemStack target = locatorService.findTargetItem(player, hand, slot);
+            if (target != null) {
+                return target;
+            }
+        }
+        if (hand == EquipmentSlot.OFF_HAND || slot == 40) {
+            return player.getInventory().getItemInOffHand();
+        } else if (slot >= 0 && slot < player.getInventory().getSize()) {
+            return player.getInventory().getItem(slot);
+        } else {
+            return player.getInventory().getItemInMainHand();
+        }
+    }
+
+    public int resolvePlayerTier(Player player, EquipmentSlot hand, int slot) {
+        if (module == null || player == null) {
+            return 1;
+        }
+        ItemStack item = resolveItem(player, hand, slot);
+        return module.resolveItemTier(item);
+    }
+
+    public int resolveBiomeTier(NamespacedKey biomeKey) {
+        return module != null ? module.resolveBiomeTier(biomeKey) : 1;
     }
 
     /**
@@ -214,31 +283,67 @@ public class BiomeCompassGUI implements Listener {
         return true;
     }
 
-    private ItemStack createBiomeIcon(Biome biome, String envName) {
-        NamespacedKey key = biome.getKey();
+    public ItemStack createBiomeIcon(Biome biome, String envName) {
+        return createBiomeIcon(biome != null ? biome.getKey() : null, envName, false);
+    }
+
+    public ItemStack createBiomeIcon(Biome biome, String envName, boolean locked) {
+        return createBiomeIcon(biome != null ? biome.getKey() : null, envName, locked);
+    }
+
+    public ItemStack createBiomeIcon(NamespacedKey key, String envName) {
+        return createBiomeIcon(key, envName, false);
+    }
+
+    public ItemStack createBiomeIcon(NamespacedKey key, String envName, boolean locked) {
+        String friendlyName = BiomeLocatorService.formatBiomeName(key);
+
+        if (locked) {
+            ItemStack item = createItemStack(Material.IRON_BARS);
+            ItemMeta meta = item.getItemMeta();
+            if (meta != null) {
+                meta.displayName(Component.text(friendlyName, NamedTextColor.DARK_GRAY, TextDecoration.BOLD)
+                        .decoration(TextDecoration.ITALIC, false));
+
+                String lockedLore = (module != null) ? module.getLockedBiomeLore() : BiomeTierResolver.DEFAULT_LOCKED_LORE;
+                List<Component> lore = new ArrayList<>();
+                for (String line : lockedLore.split("\n")) {
+                    lore.add(BiomeLocatorService.parseMessage(line).decoration(TextDecoration.ITALIC, false));
+                }
+                meta.lore(lore);
+
+                meta.getPersistentDataContainer().set(pdcActionKey, PersistentDataType.STRING, ACTION_LOCKED_BIOME);
+                item.setItemMeta(meta);
+            }
+            return item;
+        }
+
         Material material = resolveBiomeMaterial(key, envName);
-        ItemStack item = new ItemStack(material);
+        ItemStack item = createItemStack(material);
         ItemMeta meta = item.getItemMeta();
 
-        String friendlyName = BiomeLocatorService.formatBiomeName(key);
-        meta.displayName(Component.text(friendlyName, NamedTextColor.GOLD, TextDecoration.BOLD)
-                .decoration(TextDecoration.ITALIC, false));
+        if (meta != null) {
+            meta.displayName(Component.text(friendlyName, NamedTextColor.GOLD, TextDecoration.BOLD)
+                    .decoration(TextDecoration.ITALIC, false));
 
-        List<Component> lore = new ArrayList<>();
-        lore.add(Component.text("Environment: ", NamedTextColor.GRAY)
-                .append(Component.text(envName, NamedTextColor.WHITE))
-                .decoration(TextDecoration.ITALIC, false));
-        lore.add(Component.text("ID: ", NamedTextColor.DARK_GRAY)
-                .append(Component.text(key.toString(), NamedTextColor.DARK_GRAY))
-                .decoration(TextDecoration.ITALIC, false));
-        lore.add(Component.empty());
-        lore.add(Component.text("▶ Click to calibrate compass", NamedTextColor.YELLOW)
-                .decoration(TextDecoration.ITALIC, false));
-        meta.lore(lore);
+            List<Component> lore = new ArrayList<>();
+            lore.add(Component.text("Environment: ", NamedTextColor.GRAY)
+                    .append(Component.text(envName, NamedTextColor.WHITE))
+                    .decoration(TextDecoration.ITALIC, false));
+            lore.add(Component.text("ID: ", NamedTextColor.DARK_GRAY)
+                    .append(Component.text(key != null ? key.toString() : "unknown", NamedTextColor.DARK_GRAY))
+                    .decoration(TextDecoration.ITALIC, false));
+            lore.add(Component.empty());
+            lore.add(Component.text("▶ Click to calibrate compass", NamedTextColor.YELLOW)
+                    .decoration(TextDecoration.ITALIC, false));
+            meta.lore(lore);
 
-        // Identifying key stored in PDC rather than parsing display name
-        meta.getPersistentDataContainer().set(pdcBiomeKey, PersistentDataType.STRING, key.toString());
-        item.setItemMeta(meta);
+            // Identifying key stored in PDC rather than parsing display name
+            if (key != null) {
+                meta.getPersistentDataContainer().set(pdcBiomeKey, PersistentDataType.STRING, key.toString());
+            }
+            item.setItemMeta(meta);
+        }
         return item;
     }
 
@@ -387,12 +492,19 @@ public class BiomeCompassGUI implements Listener {
         String action = pdc.get(pdcActionKey, PersistentDataType.STRING);
         if (ACTION_PREV_PAGE.equals(action)) {
             player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 0.7f, 1.0f);
-            openPage(player, holder.getCurrentPage() - 1, holder.getHand(), holder.getInventorySlot());
+            openPage(player, holder.getCurrentPage() - 1, holder.getHand(), holder.getInventorySlot(), holder.getTier());
             return;
         }
         if (ACTION_NEXT_PAGE.equals(action)) {
             player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 0.7f, 1.0f);
-            openPage(player, holder.getCurrentPage() + 1, holder.getHand(), holder.getInventorySlot());
+            openPage(player, holder.getCurrentPage() + 1, holder.getHand(), holder.getInventorySlot(), holder.getTier());
+            return;
+        }
+        if (ACTION_LOCKED_BIOME.equals(action)) {
+            boolean playSounds = (locatorService != null) ? locatorService.isPlaySounds() : (module == null || module.isPlaySounds());
+            if (playSounds) {
+                playDenialSound(player);
+            }
             return;
         }
         if (ACTION_INFO.equals(action)) {
@@ -440,4 +552,14 @@ public class BiomeCompassGUI implements Listener {
             locatorService.locateBiome(player, biome, biomeKey, holder.getHand(), holder.getInventorySlot());
         }
     }
+
+    void playDenialSound(Player player) {
+        if (player != null) {
+            try {
+                player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1.0f, 0.5f);
+            } catch (Throwable ignored) {
+            }
+        }
+    }
 }
+
