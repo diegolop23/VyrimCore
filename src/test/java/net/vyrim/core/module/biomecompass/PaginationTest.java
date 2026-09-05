@@ -30,32 +30,18 @@ class PaginationTest {
             items.add(i);
         }
 
-        int pageSize = BiomeCompassGUI.PAGE_SIZE; // 45
-        int totalPages = calculateTotalPages(totalItems); // 3
+        int pageSize = BiomeCompassGUI.PAGE_SIZE;
+        int totalPages = calculateTotalPages(totalItems);
 
-        // Page 0: 0 to 44 (45 items)
-        int p0From = 0;
-        int p0To = Math.min(p0From + pageSize, totalItems);
-        List<Integer> page0 = items.subList(p0From, p0To);
-        assertEquals(45, page0.size());
-        assertEquals(0, page0.get(0));
-        assertEquals(44, page0.get(44));
-
-        // Page 1: 45 to 89 (45 items)
-        int p1From = 1 * pageSize;
-        int p1To = Math.min(p1From + pageSize, totalItems);
-        List<Integer> page1 = items.subList(p1From, p1To);
-        assertEquals(45, page1.size());
-        assertEquals(45, page1.get(0));
-        assertEquals(89, page1.get(44));
-
-        // Page 2: 90 to 99 (10 items)
-        int p2From = 2 * pageSize;
-        int p2To = Math.min(p2From + pageSize, totalItems);
-        List<Integer> page2 = items.subList(p2From, p2To);
-        assertEquals(10, page2.size());
-        assertEquals(90, page2.get(0));
-        assertEquals(99, page2.get(9));
+        for (int p = 0; p < totalPages; p++) {
+            int from = p * pageSize;
+            int to = Math.min(from + pageSize, totalItems);
+            List<Integer> page = items.subList(from, to);
+            int expectedSize = to - from;
+            assertEquals(expectedSize, page.size());
+            assertEquals(from, page.get(0));
+            assertEquals(to - 1, page.get(expectedSize - 1));
+        }
     }
 
     private int calculateTotalPages(int totalItems) {

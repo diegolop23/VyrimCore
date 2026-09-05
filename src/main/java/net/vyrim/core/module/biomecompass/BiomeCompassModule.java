@@ -181,8 +181,9 @@ public class BiomeCompassModule implements Module {
             }
         }
 
-        // Shutdown async search tasks
+        // Shutdown async search tasks and defensively sweep lingering search tags from online players
         if (locatorService != null) {
+            locatorService.sweepAllSearchTags();
             locatorService.shutdown();
         }
 
